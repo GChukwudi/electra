@@ -1,25 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "./ElectraAccessControl.sol";
 
 /**
- * @title Electra - Blockchain Voting System
- * @dev A secure, transparent voting system for Nigerian elections
+ * @title Electra
+ * @dev Main voting contract for the Electra blockchain voting system
  * @author God's Favour Chukwudi
  * 
- * Features:
- * - Secure voter registration and authentication
- * - Tamper-proof vote recording
- * - Real-time transparent results
- * - Role-based access control
- * - Emergency controls
+ * Electra is a secure, transparent, and immutable voting system designed
+ * to address electoral integrity challenges in Nigeria and beyond.
  */
-contract Electra is ReentrancyGuard, Ownable, Pausable {
+contract Electra is ElectraAccessControl {
     
-    // ==================== STRUCTURES ====================
+    // ==================== STRUCTS ====================
     
     /**
      * @dev Voter information structure
@@ -30,8 +24,7 @@ contract Electra is ReentrancyGuard, Ownable, Pausable {
         uint256 candidateVoted;
         uint256 voterID;
         uint256 registrationTime;
-        string voterName;
-        bytes32 voterHash; // For additional verification
+        bytes32 verificationHash;
     }
     
     /**
@@ -44,71 +37,74 @@ contract Electra is ReentrancyGuard, Ownable, Pausable {
         uint256 voteCount;
         bool isActive;
         uint256 candidateID;
-        string imageHash; // IPFS hash for candidate image
+        uint256 addedAt;
     }
     
     /**
-     * @dev Election configuration structure
+     * @dev Election information structure
      */
-    struct ElectionConfig {
+    struct Election {
         string title;
         string description;
         uint256 startTime;
         uint256 endTime;
-        uint256 maxVoters;
+        uint256 registrationDeadline;
         bool isActive;
-        address commissioner;
+        bool isFinalized;
+        uint256 totalVoters;
+        uint256 totalVotes;
+        uint256 winnerID;
     }
     
     /**
-     * @dev Vote structure for transparency
+     * @dev Vote record for transparency
      */
-    struct Vote {
+    struct VoteRecord {
         address voter;
         uint256 candidateID;
         uint256 timestamp;
-        bytes32 voteHash;
+        bytes32 transactionHash;
     }
     
     // ==================== STATE VARIABLES ====================
     
-    ElectionConfig public electionConfig;
-    
-    // Mappings
+    // Core election data
+    Election public currentElection;
     mapping(address => Voter) public voters;
     mapping(uint256 => Candidate) public candidates;
-    mapping(address => bool) public authorizedAdmins;
-    mapping(uint256 => Vote) public voteRecords;
+    mapping(uint256 => VoteRecord) public voteRecords;
     
-    // Arrays for iteration
-    address[] public voterAddresses;
-    uint256[] public candidateIDs;
+    // Mappings for efficient access
+    mapping(address => uint256) public voterToID;
+    mapping(uint256 => address) public idToVoter;
     
     // Counters
-    uint256 public totalVoters;
-    uint256 public totalVotes;
     uint256 public totalCandidates;
-    uint256 private nextVoterID;
-    uint256 private nextVoteID;
+    uint256 public nextVoterID;
+    uint256 public nextVoteRecord;
     
     // Election states
     bool public registrationOpen;
     bool public votingOpen;
-    bool public electionFinalized;
+    
+    // Security features
+    mapping(bytes32 => bool) public usedHashes;
+    uint256 public constant MAX_CANDIDATES = 50;
+    uint256 public constant MIN_VOTING_DURATION = 1 hours;
+    uint256 public constant MAX_VOTING_DURATION = 30 days;
     
     // ==================== EVENTS ====================
+    
+    event ElectionCreated(
+        string indexed title,
+        uint256 startTime,
+        uint256 endTime,
+        uint256 registrationDeadline
+    );
     
     event VoterRegistered(
         address indexed voter,
         uint256 indexed voterID,
-        string voterName,
-        uint256 timestamp
-    );
-    
-    event VoteCast(
-        address indexed voter,
-        uint256 indexed candidateID,
-        uint256 indexed voteID,
         uint256 timestamp
     );
     
@@ -116,122 +112,223 @@ contract Electra is ReentrancyGuard, Ownable, Pausable {
         uint256 indexed candidateID,
         string name,
         string party,
-        address addedBy
+        address indexed addedBy
     );
     
-    event CandidateUpdated(
+    event VoteCast(
+        address indexed voter,
         uint256 indexed candidateID,
-        string name,
-        string party
+        uint256 timestamp,
+        uint256 voteRecordID
     );
     
-    event ElectionStateChanged(
-        string state,
-        address changedBy,
-        uint256 timestamp
-    );
+    event ElectionStarted(uint256 startTime, uint256 endTime);
+    event ElectionEnded(uint256 endTime, uint256 totalVotes);
+    event ElectionFinalized(uint256 indexed winnerID, string winnerName, uint256 totalVotes);
     
-    event ElectionFinalized(
-        uint256 indexed winnerID,
-        string winnerName,
-        uint256 totalVotes,
-        uint256 timestamp
-    );
+    event RegistrationOpened(uint256 deadline);
+    event RegistrationClosed(uint256 totalVoters);
     
-    event AdminAdded(address indexed admin, address addedBy);
-    event AdminRemoved(address indexed admin, address removedBy);
+    event CandidateDeactivated(uint256 indexed candidateID, address indexed deactivatedBy);
+    event VotingExtended(uint256 newEndTime, uint256 extensionBy);
     
     // ==================== MODIFIERS ====================
     
-    modifier onlyCommissioner() {
-        require(msg.sender == electionConfig.commissioner, "Only commissioner");
-        _;
-    }
-    
-    modifier onlyAuthorized() {
+    modifier registrationIsOpen() {
+        require(registrationOpen, "Voter registration is not open");
         require(
-            msg.sender == electionConfig.commissioner || authorizedAdmins[msg.sender],
-            "Not authorized"
+            block.timestamp <= currentElection.registrationDeadline,
+            "Registration deadline has passed"
         );
         _;
     }
     
-    modifier registrationIsOpen() {
-        require(registrationOpen, "Registration closed");
-        _;
-    }
-    
     modifier votingIsOpen() {
-        require(votingOpen, "Voting closed");
-        require(block.timestamp >= electionConfig.startTime, "Voting not started");
-        require(block.timestamp <= electionConfig.endTime, "Voting ended");
+        require(votingOpen, "Voting is not currently open");
+        require(currentElection.isActive, "Election is not active");
+        require(
+            block.timestamp >= currentElection.startTime,
+            "Voting has not started yet"
+        );
+        require(
+            block.timestamp <= currentElection.endTime,
+            "Voting period has ended"
+        );
         _;
     }
     
     modifier onlyRegisteredVoter() {
-        require(voters[msg.sender].isRegistered, "Not registered");
+        require(voters[msg.sender].isRegistered, "You are not registered to vote");
         _;
     }
     
     modifier hasNotVoted() {
-        require(!voters[msg.sender].hasVoted, "Already voted");
+        require(!voters[msg.sender].hasVoted, "You have already voted");
         _;
     }
     
     modifier electionNotFinalized() {
-        require(!electionFinalized, "Election finalized");
+        require(!currentElection.isFinalized, "Election has been finalized");
         _;
     }
     
-    modifier validCandidate(uint256 candidateID) {
-        require(candidateID > 0 && candidateID <= totalCandidates, "Invalid candidate");
-        require(candidates[candidateID].isActive, "Candidate inactive");
+    modifier validCandidate(uint256 _candidateID) {
+        require(_candidateID > 0 && _candidateID <= totalCandidates, "Invalid candidate ID");
+        require(candidates[_candidateID].isActive, "Candidate is not active");
         _;
     }
     
     // ==================== CONSTRUCTOR ====================
     
-    constructor(
-        string memory _title,
-        string memory _description,
-        uint256 _durationHours,
-        uint256 _maxVoters
-    ) {
-        electionConfig = ElectionConfig({
-            title: _title,
-            description: _description,
-            startTime: 0, // Set when voting starts
-            endTime: 0,   // Set when voting starts
-            maxVoters: _maxVoters,
-            isActive: true,
-            commissioner: msg.sender
-        });
-        
+    constructor() ElectraAccessControl() {
         nextVoterID = 1;
-        nextVoteID = 1;
-        registrationOpen = true;
-        votingOpen = false;
-        electionFinalized = false;
+        nextVoteRecord = 1;
     }
     
-    // ==================== ADMINISTRATIVE FUNCTIONS ====================
+    // ==================== ELECTION MANAGEMENT ====================
     
     /**
-     * @dev Add a new candidate
+     * @dev Create a new election
+     * @param _title Election title
+     * @param _description Election description
+     * @param _registrationDeadline Registration deadline timestamp
+     * @param _startTime Voting start time
+     * @param _endTime Voting end time
+     */
+    function createElection(
+        string memory _title,
+        string memory _description,
+        uint256 _registrationDeadline,
+        uint256 _startTime,
+        uint256 _endTime
+    ) external onlyCommissioner whenNotPaused electionNotFinalized {
+        require(bytes(_title).length > 0, "Election title cannot be empty");
+        require(_registrationDeadline > block.timestamp, "Registration deadline must be in future");
+        require(_startTime > _registrationDeadline, "Voting must start after registration deadline");
+        require(_endTime > _startTime, "End time must be after start time");
+        require(
+            _endTime - _startTime >= MIN_VOTING_DURATION,
+            "Voting duration too short"
+        );
+        require(
+            _endTime - _startTime <= MAX_VOTING_DURATION,
+            "Voting duration too long"
+        );
+        require(!currentElection.isActive, "An election is already active");
+        
+        currentElection = Election({
+            title: _title,
+            description: _description,
+            startTime: _startTime,
+            endTime: _endTime,
+            registrationDeadline: _registrationDeadline,
+            isActive: true,
+            isFinalized: false,
+            totalVoters: 0,
+            totalVotes: 0,
+            winnerID: 0
+        });
+        
+        registrationOpen = true;
+        votingOpen = false;
+        
+        emit ElectionCreated(_title, _startTime, _endTime, _registrationDeadline);
+        emit RegistrationOpened(_registrationDeadline);
+    }
+    
+    /**
+     * @dev Start the voting period manually (before scheduled time)
+     */
+    function startVoting() 
+        external 
+        onlyCommissioner 
+        whenNotPaused 
+        electionNotFinalized 
+    {
+        require(currentElection.isActive, "No active election");
+        require(!votingOpen, "Voting is already open");
+        require(totalCandidates >= 2, "Need at least 2 candidates to start voting");
+        require(
+            block.timestamp >= currentElection.registrationDeadline,
+            "Cannot start before registration deadline"
+        );
+        
+        registrationOpen = false;
+        votingOpen = true;
+        
+        // Update start time if starting early
+        if (block.timestamp < currentElection.startTime) {
+            currentElection.startTime = block.timestamp;
+        }
+        
+        emit RegistrationClosed(currentElection.totalVoters);
+        emit ElectionStarted(currentElection.startTime, currentElection.endTime);
+    }
+    
+    /**
+     * @dev End the voting period manually
+     */
+    function endVoting() 
+        external 
+        onlyCommissioner 
+        whenNotPaused 
+        electionNotFinalized 
+    {
+        require(votingOpen, "Voting is not currently open");
+        
+        votingOpen = false;
+        currentElection.endTime = block.timestamp;
+        
+        emit ElectionEnded(currentElection.endTime, currentElection.totalVotes);
+    }
+    
+    /**
+     * @dev Finalize the election and declare winner
+     */
+    function finalizeElection() 
+        external 
+        onlyCommissioner 
+        whenNotPaused 
+        electionNotFinalized 
+    {
+        require(!votingOpen, "Voting must be closed before finalizing");
+        require(currentElection.totalVotes > 0, "No votes cast");
+        require(block.timestamp > currentElection.endTime, "Election period not ended");
+        
+        // Find the winner
+        uint256 winnerID = _calculateWinner();
+        
+        currentElection.isFinalized = true;
+        currentElection.isActive = false;
+        currentElection.winnerID = winnerID;
+        
+        emit ElectionFinalized(
+            winnerID,
+            candidates[winnerID].name,
+            candidates[winnerID].voteCount
+        );
+    }
+    
+    // ==================== CANDIDATE MANAGEMENT ====================
+    
+    /**
+     * @dev Add a new candidate to the election
+     * @param _name Candidate name
+     * @param _party Political party
+     * @param _manifesto Candidate manifesto
      */
     function addCandidate(
         string memory _name,
         string memory _party,
-        string memory _manifesto,
-        string memory _imageHash
-    ) external onlyAuthorized electionNotFinalized {
-        require(bytes(_name).length > 0, "Name required");
-        require(bytes(_party).length > 0, "Party required");
-        require(!votingOpen, "Cannot add during voting");
+        string memory _manifesto
+    ) external hasAnyRole(Role.ADMIN, Role.COMMISSIONER) whenNotPaused electionNotFinalized {
+        require(bytes(_name).length > 0, "Candidate name cannot be empty");
+        require(bytes(_party).length > 0, "Party name cannot be empty");
+        require(totalCandidates < MAX_CANDIDATES, "Maximum candidates reached");
+        require(!votingOpen, "Cannot add candidates while voting is open");
+        require(currentElection.isActive, "No active election");
         
         totalCandidates++;
-        candidateIDs.push(totalCandidates);
-        
         candidates[totalCandidates] = Candidate({
             name: _name,
             party: _party,
@@ -239,165 +336,93 @@ contract Electra is ReentrancyGuard, Ownable, Pausable {
             voteCount: 0,
             isActive: true,
             candidateID: totalCandidates,
-            imageHash: _imageHash
+            addedAt: block.timestamp
         });
         
         emit CandidateAdded(totalCandidates, _name, _party, msg.sender);
     }
     
     /**
-     * @dev Update candidate information
-     */
-    function updateCandidate(
-        uint256 _candidateID,
-        string memory _name,
-        string memory _party,
-        string memory _manifesto,
-        string memory _imageHash
-    ) external onlyAuthorized electionNotFinalized validCandidate(_candidateID) {
-        require(!votingOpen, "Cannot update during voting");
-        
-        Candidate storage candidate = candidates[_candidateID];
-        candidate.name = _name;
-        candidate.party = _party;
-        candidate.manifesto = _manifesto;
-        candidate.imageHash = _imageHash;
-        
-        emit CandidateUpdated(_candidateID, _name, _party);
-    }
-    
-    /**
-     * @dev Start voting period
-     */
-    function startVoting(uint256 _durationHours) 
-        external 
-        onlyCommissioner 
-        electionNotFinalized 
-    {
-        require(!votingOpen, "Voting already open");
-        require(totalCandidates >= 2, "Need at least 2 candidates");
-        require(_durationHours > 0, "Invalid duration");
-        
-        registrationOpen = false;
-        votingOpen = true;
-        
-        electionConfig.startTime = block.timestamp;
-        electionConfig.endTime = block.timestamp + (_durationHours * 1 hours);
-        
-        emit ElectionStateChanged("VOTING_STARTED", msg.sender, block.timestamp);
-    }
-    
-    /**
-     * @dev End voting period
-     */
-    function endVoting() external onlyCommissioner electionNotFinalized {
-        require(votingOpen, "Voting not open");
-        
-        votingOpen = false;
-        electionConfig.endTime = block.timestamp;
-        
-        emit ElectionStateChanged("VOTING_ENDED", msg.sender, block.timestamp);
-    }
-    
-    /**
-     * @dev Finalize election and declare winner
-     */
-    function finalizeElection() external onlyCommissioner electionNotFinalized {
-        require(!votingOpen, "End voting first");
-        require(totalVotes > 0, "No votes cast");
-        
-        // Find winner
-        uint256 winnerID = 1;
-        uint256 maxVotes = candidates[1].voteCount;
-        
-        for (uint256 i = 2; i <= totalCandidates; i++) {
-            if (candidates[i].voteCount > maxVotes) {
-                maxVotes = candidates[i].voteCount;
-                winnerID = i;
-            }
-        }
-        
-        electionFinalized = true;
-        
-        emit ElectionFinalized(
-            winnerID,
-            candidates[winnerID].name,
-            maxVotes,
-            block.timestamp
-        );
-    }
-    
-    /**
-     * @dev Add authorized admin
-     */
-    function addAdmin(address _admin) external onlyCommissioner {
-        require(_admin != address(0), "Invalid address");
-        require(!authorizedAdmins[_admin], "Already admin");
-        
-        authorizedAdmins[_admin] = true;
-        emit AdminAdded(_admin, msg.sender);
-    }
-    
-    /**
-     * @dev Remove authorized admin
-     */
-    function removeAdmin(address _admin) external onlyCommissioner {
-        require(authorizedAdmins[_admin], "Not admin");
-        
-        authorizedAdmins[_admin] = false;
-        emit AdminRemoved(_admin, msg.sender);
-    }
-    
-    /**
-     * @dev Toggle registration status
-     */
-    function toggleRegistration() external onlyCommissioner electionNotFinalized {
-        require(!votingOpen, "Cannot change during voting");
-        registrationOpen = !registrationOpen;
-        
-        string memory state = registrationOpen ? "REGISTRATION_OPENED" : "REGISTRATION_CLOSED";
-        emit ElectionStateChanged(state, msg.sender, block.timestamp);
-    }
-    
-    /**
-     * @dev Deactivate candidate (emergency)
+     * @dev Deactivate a candidate
+     * @param _candidateID ID of the candidate to deactivate
      */
     function deactivateCandidate(uint256 _candidateID) 
         external 
         onlyCommissioner 
-        electionNotFinalized 
+        whenNotPaused 
         validCandidate(_candidateID) 
-    {
-        candidates[_candidateID].isActive = false;
-    }
-    
-    /**
-     * @dev Extend voting period
-     */
-    function extendVoting(uint256 _additionalHours) 
-        external 
-        onlyCommissioner 
         electionNotFinalized 
     {
-        require(votingOpen, "Voting not open");
-        require(_additionalHours > 0, "Invalid extension");
+        require(!votingOpen, "Cannot deactivate candidates while voting is open");
         
-        electionConfig.endTime += (_additionalHours * 1 hours);
+        candidates[_candidateID].isActive = false;
+        emit CandidateDeactivated(_candidateID, msg.sender);
     }
     
-    // ==================== VOTER FUNCTIONS ====================
+    // ==================== VOTER MANAGEMENT ====================
     
     /**
-     * @dev Register a voter
+     * @dev Register a new voter
+     * @param _voterAddress Address of the voter to register
      */
-    function registerVoter(
-        string memory _voterName
-    ) external registrationIsOpen electionNotFinalized whenNotPaused {
-        require(!voters[msg.sender].isRegistered, "Already registered");
-        require(bytes(_voterName).length > 0, "Name required");
-        require(totalVoters < electionConfig.maxVoters, "Registration full");
+    function registerVoter(address _voterAddress) 
+        external 
+        hasAnyRole(Role.ADMIN, Role.COMMISSIONER) 
+        registrationIsOpen 
+        whenNotPaused 
+        electionNotFinalized 
+    {
+        require(_voterAddress != address(0), "Invalid voter address");
+        require(!voters[_voterAddress].isRegistered, "Voter already registered");
+        require(currentElection.isActive, "No active election");
         
-        bytes32 voterHash = keccak256(abi.encodePacked(msg.sender, _voterName, block.timestamp));
+        // Generate verification hash
+        bytes32 verificationHash = keccak256(
+            abi.encodePacked(_voterAddress, nextVoterID, block.timestamp)
+        );
+        
+        require(!usedHashes[verificationHash], "Hash collision detected");
+        usedHashes[verificationHash] = true;
+        
+        voters[_voterAddress] = Voter({
+            isRegistered: true,
+            hasVoted: false,
+            candidateVoted: 0,
+            voterID: nextVoterID,
+            registrationTime: block.timestamp,
+            verificationHash: verificationHash
+        });
+        
+        voterToID[_voterAddress] = nextVoterID;
+        idToVoter[nextVoterID] = _voterAddress;
+        
+        currentElection.totalVoters++;
+        
+        emit VoterRegistered(_voterAddress, nextVoterID, block.timestamp);
+        nextVoterID++;
+    }
+    
+    /**
+     * @dev Self-register as a voter (if permitted)
+     */
+    function selfRegister() 
+        external 
+        registrationIsOpen 
+        whenNotPaused 
+        electionNotFinalized 
+    {
+        require(!voters[msg.sender].isRegistered, "You are already registered");
+        require(currentElection.isActive, "No active election");
+        
+        // For POC, allow self-registration
+        // In production, this would require additional verification
+        
+        bytes32 verificationHash = keccak256(
+            abi.encodePacked(msg.sender, nextVoterID, block.timestamp)
+        );
+        
+        require(!usedHashes[verificationHash], "Hash collision detected");
+        usedHashes[verificationHash] = true;
         
         voters[msg.sender] = Voter({
             isRegistered: true,
@@ -405,64 +430,105 @@ contract Electra is ReentrancyGuard, Ownable, Pausable {
             candidateVoted: 0,
             voterID: nextVoterID,
             registrationTime: block.timestamp,
-            voterName: _voterName,
-            voterHash: voterHash
+            verificationHash: verificationHash
         });
         
-        voterAddresses.push(msg.sender);
-        totalVoters++;
-        nextVoterID++;
+        voterToID[msg.sender] = nextVoterID;
+        idToVoter[nextVoterID] = msg.sender;
         
-        emit VoterRegistered(msg.sender, nextVoterID - 1, _voterName, block.timestamp);
+        currentElection.totalVoters++;
+        
+        emit VoterRegistered(msg.sender, nextVoterID, block.timestamp);
+        nextVoterID++;
     }
     
+    // ==================== VOTING ====================
+    
     /**
-     * @dev Cast a vote
+     * @dev Cast a vote for a candidate
+     * @param _candidateID ID of the candidate to vote for
      */
     function vote(uint256 _candidateID) 
         external 
         votingIsOpen 
         onlyRegisteredVoter 
         hasNotVoted 
+        validCandidate(_candidateID) 
+        whenNotPaused 
         electionNotFinalized 
-        validCandidate(_candidateID)
-        nonReentrant
-        whenNotPaused
+        onlyActiveUser
     {
-        // Update voter record
+        // Record the vote
         voters[msg.sender].hasVoted = true;
         voters[msg.sender].candidateVoted = _candidateID;
         
         // Update candidate vote count
         candidates[_candidateID].voteCount++;
         
-        // Create vote record for transparency
-        bytes32 voteHash = keccak256(abi.encodePacked(
-            msg.sender, 
-            _candidateID, 
-            block.timestamp,
-            nextVoteID
-        ));
+        // Update total votes
+        currentElection.totalVotes++;
         
-        voteRecords[nextVoteID] = Vote({
+        // Create vote record for transparency
+        voteRecords[nextVoteRecord] = VoteRecord({
             voter: msg.sender,
             candidateID: _candidateID,
             timestamp: block.timestamp,
-            voteHash: voteHash
+            transactionHash: blockhash(block.number - 1)
         });
         
-        totalVotes++;
+        emit VoteCast(msg.sender, _candidateID, block.timestamp, nextVoteRecord);
+        nextVoteRecord++;
+    }
+    
+    // ==================== EMERGENCY CONTROLS ====================
+    
+    /**
+     * @dev Extend voting period in case of emergency
+     * @param _additionalHours Additional hours to extend voting
+     */
+    function extendVotingPeriod(uint256 _additionalHours) 
+        external 
+        onlyCommissioner 
+        whenNotPaused 
+        electionNotFinalized 
+    {
+        require(votingOpen, "Voting is not currently open");
+        require(_additionalHours > 0 && _additionalHours <= 72, "Invalid extension period");
         
-        emit VoteCast(msg.sender, _candidateID, nextVoteID, block.timestamp);
-        nextVoteID++;
+        uint256 extension = _additionalHours * 1 hours;
+        currentElection.endTime += extension;
+        
+        emit VotingExtended(currentElection.endTime, extension);
+    }
+    
+    /**
+     * @dev Emergency reset election (only in emergency mode)
+     */
+    function emergencyResetElection() 
+        external 
+        onlyOwner 
+        whenPaused 
+    {
+        require(emergencyMode, "Emergency mode not active");
+        
+        // Reset election state
+        currentElection.isActive = false;
+        currentElection.isFinalized = false;
+        registrationOpen = false;
+        votingOpen = false;
+        
+        // Note: Vote data is preserved for audit purposes
+        // Only the election state is reset
     }
     
     // ==================== VIEW FUNCTIONS ====================
     
     /**
      * @dev Get voter information
+     * @param _voterAddress Address of the voter
+     * @return Voter information
      */
-    function getVoterInfo(address _voter) 
+    function getVoterInfo(address _voterAddress) 
         external 
         view 
         returns (
@@ -470,23 +536,23 @@ contract Electra is ReentrancyGuard, Ownable, Pausable {
             bool hasVoted,
             uint256 candidateVoted,
             uint256 voterID,
-            uint256 registrationTime,
-            string memory voterName
+            uint256 registrationTime
         ) 
     {
-        Voter memory voter = voters[_voter];
+        Voter memory voter = voters[_voterAddress];
         return (
             voter.isRegistered,
             voter.hasVoted,
             voter.candidateVoted,
             voter.voterID,
-            voter.registrationTime,
-            voter.voterName
+            voter.registrationTime
         );
     }
     
     /**
      * @dev Get candidate information
+     * @param _candidateID ID of the candidate
+     * @return Candidate information
      */
     function getCandidateInfo(uint256 _candidateID) 
         external 
@@ -496,44 +562,43 @@ contract Electra is ReentrancyGuard, Ownable, Pausable {
             string memory party,
             string memory manifesto,
             uint256 voteCount,
-            bool isActive,
-            string memory imageHash
+            bool isActive
         ) 
     {
-        require(_candidateID > 0 && _candidateID <= totalCandidates, "Invalid candidate");
+        require(_candidateID > 0 && _candidateID <= totalCandidates, "Invalid candidate ID");
         Candidate memory candidate = candidates[_candidateID];
         return (
             candidate.name,
             candidate.party,
             candidate.manifesto,
             candidate.voteCount,
-            candidate.isActive,
-            candidate.imageHash
+            candidate.isActive
         );
     }
     
     /**
-     * @dev Get all candidates
+     * @dev Get all candidates information
+     * @return Arrays of candidate information
      */
     function getAllCandidates() 
         external 
         view 
         returns (
-            uint256[] memory ids,
+            uint256[] memory candidateIDs,
             string[] memory names,
             string[] memory parties,
             uint256[] memory voteCounts,
             bool[] memory isActiveArray
         ) 
     {
-        ids = new uint256[](totalCandidates);
+        candidateIDs = new uint256[](totalCandidates);
         names = new string[](totalCandidates);
         parties = new string[](totalCandidates);
         voteCounts = new uint256[](totalCandidates);
         isActiveArray = new bool[](totalCandidates);
         
         for (uint256 i = 1; i <= totalCandidates; i++) {
-            ids[i-1] = i;
+            candidateIDs[i-1] = i;
             names[i-1] = candidates[i].name;
             parties[i-1] = candidates[i].party;
             voteCounts[i-1] = candidates[i].voteCount;
@@ -542,40 +607,74 @@ contract Electra is ReentrancyGuard, Ownable, Pausable {
     }
     
     /**
-     * @dev Get election statistics
+     * @dev Get election information
+     * @return Election information
      */
-    function getElectionStats() 
+    function getElectionInfo() 
         external 
         view 
         returns (
             string memory title,
             string memory description,
-            uint256 totalVotersCount,
-            uint256 totalVotesCount,
-            uint256 totalCandidatesCount,
             uint256 startTime,
             uint256 endTime,
-            bool registrationActive,
-            bool votingActive,
-            bool finalized
+            uint256 registrationDeadline,
+            bool isActive,
+            bool isFinalized,
+            uint256 totalVoters,
+            uint256 totalVotes,
+            uint256 winnerID
         ) 
     {
         return (
-            electionConfig.title,
-            electionConfig.description,
-            totalVoters,
-            totalVotes,
-            totalCandidates,
-            electionConfig.startTime,
-            electionConfig.endTime,
-            registrationOpen,
-            votingOpen,
-            electionFinalized
+            currentElection.title,
+            currentElection.description,
+            currentElection.startTime,
+            currentElection.endTime,
+            currentElection.registrationDeadline,
+            currentElection.isActive,
+            currentElection.isFinalized,
+            currentElection.totalVoters,
+            currentElection.totalVotes,
+            currentElection.winnerID
         );
     }
     
     /**
-     * @dev Get current winner
+     * @dev Get current election status
+     * @return Status information
+     */
+    function getElectionStatus() 
+        external 
+        view 
+        returns (
+            bool registrationActive,
+            bool votingActive,
+            uint256 timeUntilStart,
+            uint256 timeUntilEnd,
+            uint256 timeUntilRegistrationDeadline
+        ) 
+    {
+        registrationActive = registrationOpen && 
+                           block.timestamp <= currentElection.registrationDeadline;
+        
+        votingActive = votingOpen && 
+                      block.timestamp >= currentElection.startTime && 
+                      block.timestamp <= currentElection.endTime;
+        
+        timeUntilStart = currentElection.startTime > block.timestamp ? 
+                        currentElection.startTime - block.timestamp : 0;
+        
+        timeUntilEnd = currentElection.endTime > block.timestamp ? 
+                      currentElection.endTime - block.timestamp : 0;
+        
+        timeUntilRegistrationDeadline = currentElection.registrationDeadline > block.timestamp ? 
+                                       currentElection.registrationDeadline - block.timestamp : 0;
+    }
+    
+    /**
+     * @dev Get current winner (can be called during or after election)
+     * @return Winner information
      */
     function getCurrentWinner() 
         external 
@@ -585,121 +684,143 @@ contract Electra is ReentrancyGuard, Ownable, Pausable {
             string memory winnerName,
             string memory winnerParty,
             uint256 maxVotes,
-            uint256 totalVotesCount
+            bool isTie
         ) 
     {
-        require(totalCandidates > 0, "No candidates");
+        require(totalCandidates > 0, "No candidates available");
         
-        winnerID = 1;
-        maxVotes = candidates[1].voteCount;
+        (winnerID, maxVotes, isTie) = _calculateWinnerWithTieCheck();
         
-        for (uint256 i = 2; i <= totalCandidates; i++) {
-            if (candidates[i].voteCount > maxVotes) {
-                maxVotes = candidates[i].voteCount;
-                winnerID = i;
-            }
+        if (winnerID > 0) {
+            winnerName = candidates[winnerID].name;
+            winnerParty = candidates[winnerID].party;
         }
-        
-        return (
-            winnerID,
-            candidates[winnerID].name,
-            candidates[winnerID].party,
-            maxVotes,
-            totalVotes
-        );
     }
     
     /**
-     * @dev Check if voting is currently active
+     * @dev Get vote record by ID
+     * @param _recordID Vote record ID
+     * @return Vote record information
      */
-    function isVotingActive() external view returns (bool) {
-        return votingOpen && 
-               block.timestamp >= electionConfig.startTime && 
-               block.timestamp <= electionConfig.endTime;
-    }
-    
-    /**
-     * @dev Get remaining voting time
-     */
-    function getRemainingTime() external view returns (uint256) {
-        if (!votingOpen || block.timestamp > electionConfig.endTime) {
-            return 0;
-        }
-        return electionConfig.endTime - block.timestamp;
-    }
-    
-    /**
-     * @dev Get vote record by ID (for transparency)
-     */
-    function getVoteRecord(uint256 _voteID) 
+    function getVoteRecord(uint256 _recordID) 
         external 
         view 
         returns (
             address voter,
             uint256 candidateID,
             uint256 timestamp,
-            bytes32 voteHash
+            bytes32 transactionHash
         ) 
     {
-        require(_voteID > 0 && _voteID < nextVoteID, "Invalid vote ID");
-        Vote memory voteRecord = voteRecords[_voteID];
-        return (
-            voteRecord.voter,
-            voteRecord.candidateID,
-            voteRecord.timestamp,
-            voteRecord.voteHash
-        );
+        require(_recordID > 0 && _recordID < nextVoteRecord, "Invalid record ID");
+        VoteRecord memory record = voteRecords[_recordID];
+        return (record.voter, record.candidateID, record.timestamp, record.transactionHash);
     }
     
     /**
-     * @dev Verify vote hash
+     * @dev Verify a vote using verification hash
+     * @param _voter Voter address
+     * @param _hash Verification hash
+     * @return Whether the vote is valid
      */
-    function verifyVoteHash(
-        uint256 _voteID,
-        address _voter,
-        uint256 _candidateID,
-        uint256 _timestamp
-    ) external view returns (bool) {
-        require(_voteID > 0 && _voteID < nextVoteID, "Invalid vote ID");
+    function verifyVote(address _voter, bytes32 _hash) 
+        external 
+        view 
+        returns (bool) 
+    {
+        return voters[_voter].verificationHash == _hash && voters[_voter].hasVoted;
+    }
+    
+    /**
+     * @dev Get election statistics
+     * @return Comprehensive election statistics
+     */
+    function getElectionStatistics() 
+        external 
+        view 
+        returns (
+            uint256 totalRegisteredVoters,
+            uint256 totalVotesCast,
+            uint256 voterTurnoutPercentage,
+            uint256 activeCandidates,
+            uint256 totalCandidatesCount,
+            bool hasWinner,
+            bool electionComplete
+        ) 
+    {
+        totalRegisteredVoters = currentElection.totalVoters;
+        totalVotesCast = currentElection.totalVotes;
         
-        bytes32 computedHash = keccak256(abi.encodePacked(
-            _voter,
-            _candidateID,
-            _timestamp,
-            _voteID
-        ));
+        voterTurnoutPercentage = totalRegisteredVoters > 0 ? 
+                               (totalVotesCast * 100) / totalRegisteredVoters : 0;
         
-        return voteRecords[_voteID].voteHash == computedHash;
-    }
-    
-    // ==================== EMERGENCY FUNCTIONS ====================
-    
-    /**
-     * @dev Pause contract (emergency)
-     */
-    function pause() external onlyCommissioner {
-        _pause();
-    }
-    
-    /**
-     * @dev Unpause contract
-     */
-    function unpause() external onlyCommissioner {
-        _unpause();
-    }
-    
-    /**
-     * @dev Update election configuration
-     */
-    function updateElectionConfig(
-        string memory _title,
-        string memory _description,
-        uint256 _maxVoters
-    ) external onlyCommissioner electionNotFinalized {
-        require(!votingOpen, "Cannot update during voting");
+        activeCandidates = _countActiveCandidates();
+        totalCandidatesCount = totalCandidates;
         
-        electionConfig.title = _title;
-        electionConfig.description = _description;
-        electionConfig.maxVoters = _maxVoters;
+        hasWinner = currentElection.winnerID > 0;
+        electionComplete = currentElection.isFinalized;
+    }
+    
+    // ==================== INTERNAL FUNCTIONS ====================
+    
+    /**
+     * @dev Calculate the winner of the election
+     * @return Winner candidate ID
+     */
+    function _calculateWinner() internal view returns (uint256) {
+        require(totalCandidates > 0, "No candidates available");
+        
+        uint256 winnerID = 1;
+        uint256 maxVotes = candidates[1].voteCount;
+        
+        for (uint256 i = 2; i <= totalCandidates; i++) {
+            if (candidates[i].isActive && candidates[i].voteCount > maxVotes) {
+                maxVotes = candidates[i].voteCount;
+                winnerID = i;
+            }
+        }
+        
+        return winnerID;
+    }
+    
+    /**
+     * @dev Calculate winner with tie detection
+     * @return Winner ID, vote count, and tie status
+     */
+    function _calculateWinnerWithTieCheck() 
+        internal 
+        view 
+        returns (uint256 winnerID, uint256 maxVotes, bool isTie) 
+    {
+        require(totalCandidates > 0, "No candidates available");
+        
+        winnerID = 0;
+        maxVotes = 0;
+        isTie = false;
+        
+        // Find maximum votes
+        for (uint256 i = 1; i <= totalCandidates; i++) {
+            if (candidates[i].isActive && candidates[i].voteCount > maxVotes) {
+                maxVotes = candidates[i].voteCount;
+                winnerID = i;
+                isTie = false;
+            } else if (candidates[i].isActive && candidates[i].voteCount == maxVotes && maxVotes > 0) {
+                isTie = true;
+            }
+        }
+    }
+    
+    /**
+     * @dev Count active candidates
+     * @return Number of active candidates
+     */
+    function _countActiveCandidates() internal view returns (uint256) {
+        uint256 count = 0;
+        for (uint256 i = 1; i <= totalCandidates; i++) {
+            if (candidates[i].isActive) {
+                count++;
+            }
+        }
+        return count;
     }
 }

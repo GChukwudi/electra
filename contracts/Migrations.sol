@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
+/**
+ * @title Migrations
+ * @dev Standard Truffle migrations contract
+ */
 contract Migrations {
     address public owner = msg.sender;
     uint public last_completed_migration;
