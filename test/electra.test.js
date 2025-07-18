@@ -1,538 +1,641 @@
+/**
+ * Electra Core Functionality Tests
+ * Tests the main voting contract functionality
+ */
+
 const Electra = artifacts.require("Electra");
-const { assert } = require("chai");
-const truffleAssert = require("truffle-assertions");
+const { expect } = require("chai");
+const { time } = require("@openzeppelin/test-helpers");
 
-contract("Electra Voting System", (accounts) => {
-  let electraInstance;
-  const commissioner = accounts[0];
-  const admin1 = accounts[1];
-  const voter1 = accounts[2];
-  const voter2 = accounts[3];
-  const voter3 = accounts[4];
-  const unauthorized = accounts[5];
-
+contract("Electra", function (accounts) {
+  let electra;
+  const [owner, admin, voter1, voter2, voter3, voter4, voter5] = accounts;
+  
   const electionTitle = "Test Election 2024";
-  const electionDescription = "Test election for Electra voting system";
-  const durationHours = 1;
-  const maxVoters = 100;
-
-  beforeEach(async () => {
-    electraInstance = await Electra.new(
-      electionTitle,
-      electionDescription,
-      durationHours,
-      maxVoters,
-      { from: commissioner }
-    );
+  const electionDescription = "Test election for POC";
+  
+  beforeEach(async function () {
+    electra = await Electra.new({ from: owner });
   });
-
-  describe("🏗️ Contract Deployment", () => {
-    it("should deploy with correct initial values", async () => {
-      const stats = await electraInstance.getElectionStats();
-      
-      assert.equal(stats.title, electionTitle, "Election title should match");
-      assert.equal(stats.description, electionDescription, "Description should match");
-      assert.equal(stats.totalVotersCount.toNumber(), 0, "Should start with 0 voters");
-      assert.equal(stats.totalVotesCount.toNumber(), 0, "Should start with 0 votes");
-      assert.equal(stats.totalCandidatesCount.toNumber(), 0, "Should start with 0 candidates");
-      assert.equal(stats.registrationActive, true, "Registration should be open initially");
-      assert.equal(stats.votingActive, false, "Voting should be closed initially");
-      assert.equal(stats.finalized, false, "Election should not be finalized");
+  
+  describe("Contract Deployment", function () {
+    it("Should deploy successfully", async function () {
+      expect(electra.address).to.not.equal("");
+      expect(electra.address).to.not.equal(0x0);
     });
-
-    it("should set the correct commissioner", async () => {
-      const config = await electraInstance.electionConfig();
-      assert.equal(config.commissioner, commissioner, "Commissioner should be deployer");
+    
+    it("Should set the correct owner and commissioner", async function () {
+      const systemOwner = await electra.systemOwner();
+      const commissioner = await electra.currentCommissioner();
+      
+      expect(systemOwner).to.equal(owner);
+      expect(commissioner).to.equal(owner);
+    });
+    
+    it("Should initialize with correct default values", async function () {
+      const totalCandidates = await electra.totalCandidates();
+      const nextVoterID = await electra.nextVoterID();
+      const registrationOpen = await electra.registrationOpen();
+      const votingOpen = await electra.votingOpen();
+      
+      expect(totalCandidates.toNumber()).to.equal(0);
+      expect(nextVoterID.toNumber()).to.equal(1);
+      expect(registrationOpen).to.equal(false);
+      expect(votingOpen).to.equal(false);
     });
   });
-
-  describe("👨‍💼 Admin Management", () => {
-    it("should allow commissioner to add admins", async () => {
-      await electraInstance.addAdmin(admin1, { from: commissioner });
-      
-      const isAdmin = await electraInstance.authorizedAdmins(admin1);
-      assert.equal(isAdmin, true, "Admin should be authorized");
+  
+  describe("Election Management", function () {
+    let registrationDeadline, startTime, endTime;
+    
+    beforeEach(async function () {
+      const currentTime = await time.latest();
+      registrationDeadline = currentTime.add(time.duration.days(1));
+      startTime = registrationDeadline.add(time.duration.hours(1));
+      endTime = startTime.add(time.duration.days(2));
     });
-
-    it("should emit AdminAdded event", async () => {
-      const result = await electraInstance.addAdmin(admin1, { from: commissioner });
+    
+    it("Should create an election successfully", async function () {
+      const tx = await electra.createElection(
+        electionTitle,
+        electionDescription,
+        registrationDeadline,
+        startTime,
+        endTime,
+        { from: owner }
+      );
       
-      truffleAssert.eventEmitted(result, "AdminAdded", (ev) => {
-        return ev.admin === admin1 && ev.addedBy === commissioner;
-      });
+      // Check event
+      expect(tx.logs[0].event).to.equal("ElectionCreated");
+      expect(tx.logs[0].args.title).to.equal(electionTitle);
+      
+      // Check election info
+      const electionInfo = await electra.getElectionInfo();
+      expect(electionInfo.title).to.equal(electionTitle);
+      expect(electionInfo.description).to.equal(electionDescription);
+      expect(electionInfo.isActive).to.equal(true);
+      expect(electionInfo.isFinalized).to.equal(false);
     });
-
-    it("should not allow non-commissioner to add admins", async () => {
-      await truffleAssert.reverts(
-        electraInstance.addAdmin(admin1, { from: unauthorized }),
-        "Only commissioner"
+    
+    it("Should not allow non-commissioner to create election", async function () {
+      try {
+        await electra.createElection(
+          electionTitle,
+          electionDescription,
+          registrationDeadline,
+          startTime,
+          endTime,
+          { from: voter1 }
+        );
+        expect.fail("Should have thrown an error");
+      } catch (error) {
+        expect(error.message).to.include("Only commissioner can perform this action");
+      }
+    });
+    
+    it("Should not allow invalid election parameters", async function () {
+      const currentTime = await time.latest();
+      
+      // Past registration deadline
+      try {
+        await electra.createElection(
+          electionTitle,
+          electionDescription,
+          currentTime.sub(time.duration.hours(1)),
+          startTime,
+          endTime,
+          { from: owner }
+        );
+        expect.fail("Should have thrown an error");
+      } catch (error) {
+        expect(error.message).to.include("Registration deadline must be in future");
+      }
+      
+      // Start time before registration deadline
+      try {
+        await electra.createElection(
+          electionTitle,
+          electionDescription,
+          registrationDeadline,
+          registrationDeadline.sub(time.duration.hours(1)),
+          endTime,
+          { from: owner }
+        );
+        expect.fail("Should have thrown an error");
+      } catch (error) {
+        expect(error.message).to.include("Voting must start after registration deadline");
+      }
+    });
+  });
+  
+  describe("Candidate Management", function () {
+    beforeEach(async function () {
+      const currentTime = await time.latest();
+      const registrationDeadline = currentTime.add(time.duration.days(1));
+      const startTime = registrationDeadline.add(time.duration.hours(1));
+      const endTime = startTime.add(time.duration.days(2));
+      
+      await electra.createElection(
+        electionTitle,
+        electionDescription,
+        registrationDeadline,
+        startTime,
+        endTime,
+        { from: owner }
       );
     });
-
-    it("should allow commissioner to remove admins", async () => {
-      await electraInstance.addAdmin(admin1, { from: commissioner });
-      await electraInstance.removeAdmin(admin1, { from: commissioner });
-      
-      const isAdmin = await electraInstance.authorizedAdmins(admin1);
-      assert.equal(isAdmin, false, "Admin should be removed");
-    });
-  });
-
-  describe("🎭 Candidate Management", () => {
-    beforeEach(async () => {
-      await electraInstance.addAdmin(admin1, { from: commissioner });
-    });
-
-    it("should allow authorized users to add candidates", async () => {
-      await electraInstance.addCandidate(
+    
+    it("Should add candidates successfully", async function () {
+      const tx = await electra.addCandidate(
         "John Doe",
-        "Democratic Party",
-        "Economic reform manifesto",
-        "QmTestHash",
-        { from: commissioner }
+        "Test Party",
+        "Test manifesto",
+        { from: owner }
       );
-
-      const candidate = await electraInstance.getCandidateInfo(1);
-      assert.equal(candidate.name, "John Doe", "Candidate name should match");
-      assert.equal(candidate.party, "Democratic Party", "Party should match");
-      assert.equal(candidate.manifesto, "Economic reform manifesto", "Manifesto should match");
-      assert.equal(candidate.voteCount.toNumber(), 0, "Vote count should be 0");
-      assert.equal(candidate.isActive, true, "Candidate should be active");
-      assert.equal(candidate.imageHash, "QmTestHash", "Image hash should match");
-    });
-
-    it("should allow admin to add candidates", async () => {
-      await electraInstance.addCandidate(
-        "Jane Smith",
-        "Progressive Party",
-        "Education reform manifesto",
-        "QmTestHash2",
-        { from: admin1 }
-      );
-
-      const totalCandidates = await electraInstance.totalCandidates();
-      assert.equal(totalCandidates.toNumber(), 1, "Should have 1 candidate");
-    });
-
-    it("should emit CandidateAdded event", async () => {
-      const result = await electraInstance.addCandidate(
-        "John Doe",
-        "Democratic Party",
-        "Economic reform manifesto",
-        "QmTestHash",
-        { from: commissioner }
-      );
-
-      truffleAssert.eventEmitted(result, "CandidateAdded", (ev) => {
-        return ev.candidateID.toNumber() === 1 && 
-               ev.name === "John Doe" && 
-               ev.party === "Democratic Party" &&
-               ev.addedBy === commissioner;
-      });
-    });
-
-    it("should not allow unauthorized users to add candidates", async () => {
-      await truffleAssert.reverts(
-        electraInstance.addCandidate(
-          "Unauthorized Candidate",
-          "Some Party",
-          "Some manifesto",
-          "QmTestHash",
-          { from: unauthorized }
-        ),
-        "Not authorized"
-      );
-    });
-
-    it("should not allow adding candidates with empty name", async () => {
-      await truffleAssert.reverts(
-        electraInstance.addCandidate(
-          "",
-          "Some Party",
-          "Some manifesto",
-          "QmTestHash",
-          { from: commissioner }
-        ),
-        "Name required"
-      );
-    });
-
-    it("should not allow adding candidates during voting", async () => {
-      // Add candidates first
-      await electraInstance.addCandidate("Candidate 1", "Party 1", "Manifesto 1", "Hash1", { from: commissioner });
-      await electraInstance.addCandidate("Candidate 2", "Party 2", "Manifesto 2", "Hash2", { from: commissioner });
       
-      // Start voting
-      await electraInstance.startVoting(1, { from: commissioner });
-
-      // Try to add another candidate
-      await truffleAssert.reverts(
-        electraInstance.addCandidate("Late Candidate", "Late Party", "Late manifesto", "LateHash", { from: commissioner }),
-        "Cannot add during voting"
-      );
+      // Check event
+      expect(tx.logs[0].event).to.equal("CandidateAdded");
+      expect(tx.logs[0].args.name).to.equal("John Doe");
+      
+      // Check candidate info
+      const candidateInfo = await electra.getCandidateInfo(1);
+      expect(candidateInfo.name).to.equal("John Doe");
+      expect(candidateInfo.party).to.equal("Test Party");
+      expect(candidateInfo.manifesto).to.equal("Test manifesto");
+      expect(candidateInfo.isActive).to.equal(true);
+      expect(candidateInfo.voteCount.toNumber()).to.equal(0);
+      
+      const totalCandidates = await electra.totalCandidates();
+      expect(totalCandidates.toNumber()).to.equal(1);
     });
-
-    it("should allow updating candidate information", async () => {
-      await electraInstance.addCandidate("John Doe", "Democratic Party", "Old manifesto", "OldHash", { from: commissioner });
+    
+    it("Should add multiple candidates", async function () {
+      await electra.addCandidate("Candidate 1", "Party 1", "Manifesto 1", { from: owner });
+      await electra.addCandidate("Candidate 2", "Party 2", "Manifesto 2", { from: owner });
+      await electra.addCandidate("Candidate 3", "Party 3", "Manifesto 3", { from: owner });
       
-      await electraInstance.updateCandidate(
-        1,
-        "John Updated",
-        "Updated Party",
-        "New manifesto",
-        "NewHash",
-        { from: commissioner }
-      );
-
-      const candidate = await electraInstance.getCandidateInfo(1);
-      assert.equal(candidate.name, "John Updated", "Name should be updated");
-      assert.equal(candidate.party, "Updated Party", "Party should be updated");
-      assert.equal(candidate.manifesto, "New manifesto", "Manifesto should be updated");
-      assert.equal(candidate.imageHash, "NewHash", "Image hash should be updated");
+      const totalCandidates = await electra.totalCandidates();
+      expect(totalCandidates.toNumber()).to.equal(3);
+      
+      const allCandidates = await electra.getAllCandidates();
+      expect(allCandidates.names.length).to.equal(3);
+      expect(allCandidates.names[0]).to.equal("Candidate 1");
+      expect(allCandidates.names[1]).to.equal("Candidate 2");
+      expect(allCandidates.names[2]).to.equal("Candidate 3");
     });
-
-    it("should get all candidates correctly", async () => {
-      await electraInstance.addCandidate("Candidate 1", "Party 1", "Manifesto 1", "Hash1", { from: commissioner });
-      await electraInstance.addCandidate("Candidate 2", "Party 2", "Manifesto 2", "Hash2", { from: commissioner });
+    
+    it("Should not allow empty candidate name", async function () {
+      try {
+        await electra.addCandidate("", "Test Party", "Test manifesto", { from: owner });
+        expect.fail("Should have thrown an error");
+      } catch (error) {
+        expect(error.message).to.include("Candidate name cannot be empty");
+      }
+    });
+    
+    it("Should deactivate candidate", async function () {
+      await electra.addCandidate("John Doe", "Test Party", "Test manifesto", { from: owner });
       
-      const candidates = await electraInstance.getAllCandidates();
+      const tx = await electra.deactivateCandidate(1, { from: owner });
+      expect(tx.logs[0].event).to.equal("CandidateDeactivated");
       
-      assert.equal(candidates.ids.length, 2, "Should return 2 candidates");
-      assert.equal(candidates.names[0], "Candidate 1", "First candidate name should match");
-      assert.equal(candidates.names[1], "Candidate 2", "Second candidate name should match");
-      assert.equal(candidates.parties[0], "Party 1", "First party should match");
-      assert.equal(candidates.parties[1], "Party 2", "Second party should match");
+      const candidateInfo = await electra.getCandidateInfo(1);
+      expect(candidateInfo.isActive).to.equal(false);
     });
   });
-
-  describe("👥 Voter Registration", () => {
-    it("should allow voter registration", async () => {
-      await electraInstance.registerVoter("Alice Johnson", { from: voter1 });
+  
+  describe("Voter Registration", function () {
+    beforeEach(async function () {
+      const currentTime = await time.latest();
+      const registrationDeadline = currentTime.add(time.duration.days(1));
+      const startTime = registrationDeadline.add(time.duration.hours(1));
+      const endTime = startTime.add(time.duration.days(2));
       
-      const voterInfo = await electraInstance.getVoterInfo(voter1);
-      assert.equal(voterInfo.isRegistered, true, "Voter should be registered");
-      assert.equal(voterInfo.hasVoted, false, "Voter should not have voted");
-      assert.equal(voterInfo.voterName, "Alice Johnson", "Voter name should match");
-      assert.equal(voterInfo.voterID.toNumber(), 1, "Voter ID should be 1");
-    });
-
-    it("should emit VoterRegistered event", async () => {
-      const result = await electraInstance.registerVoter("Alice Johnson", { from: voter1 });
-      
-      truffleAssert.eventEmitted(result, "VoterRegistered", (ev) => {
-        return ev.voter === voter1 && 
-               ev.voterID.toNumber() === 1 && 
-               ev.voterName === "Alice Johnson";
-      });
-    });
-
-    it("should not allow duplicate registration", async () => {
-      await electraInstance.registerVoter("Alice Johnson", { from: voter1 });
-      
-      await truffleAssert.reverts(
-        electraInstance.registerVoter("Alice Again", { from: voter1 }),
-        "Already registered"
+      await electra.createElection(
+        electionTitle,
+        electionDescription,
+        registrationDeadline,
+        startTime,
+        endTime,
+        { from: owner }
       );
     });
-
-    it("should not allow registration with empty name", async () => {
-      await truffleAssert.reverts(
-        electraInstance.registerVoter("", { from: voter1 }),
-        "Name required"
-      );
-    });
-
-    it("should not allow registration when closed", async () => {
-      await electraInstance.toggleRegistration({ from: commissioner });
+    
+    it("Should register voters successfully", async function () {
+      const tx = await electra.registerVoter(voter1, { from: owner });
       
-      await truffleAssert.reverts(
-        electraInstance.registerVoter("Alice Johnson", { from: voter1 }),
-        "Registration closed"
-      );
-    });
-
-    it("should increment voter count correctly", async () => {
-      await electraInstance.registerVoter("Alice", { from: voter1 });
-      await electraInstance.registerVoter("Bob", { from: voter2 });
+      // Check event
+      expect(tx.logs[0].event).to.equal("VoterRegistered");
+      expect(tx.logs[0].args.voter).to.equal(voter1);
       
-      const stats = await electraInstance.getElectionStats();
-      assert.equal(stats.totalVotersCount.toNumber(), 2, "Should have 2 registered voters");
+      // Check voter info
+      const voterInfo = await electra.getVoterInfo(voter1);
+      expect(voterInfo.isRegistered).to.equal(true);
+      expect(voterInfo.hasVoted).to.equal(false);
+      expect(voterInfo.voterID.toNumber()).to.equal(1);
+      
+      const electionInfo = await electra.getElectionInfo();
+      expect(electionInfo.totalVoters.toNumber()).to.equal(1);
+    });
+    
+    it("Should allow self-registration", async function () {
+      const tx = await electra.selfRegister({ from: voter1 });
+      
+      expect(tx.logs[0].event).to.equal("VoterRegistered");
+      expect(tx.logs[0].args.voter).to.equal(voter1);
+      
+      const voterInfo = await electra.getVoterInfo(voter1);
+      expect(voterInfo.isRegistered).to.equal(true);
+    });
+    
+    it("Should not allow duplicate registration", async function () {
+      await electra.registerVoter(voter1, { from: owner });
+      
+      try {
+        await electra.registerVoter(voter1, { from: owner });
+        expect.fail("Should have thrown an error");
+      } catch (error) {
+        expect(error.message).to.include("Voter already registered");
+      }
+    });
+    
+    it("Should register multiple voters", async function () {
+      await electra.registerVoter(voter1, { from: owner });
+      await electra.registerVoter(voter2, { from: owner });
+      await electra.registerVoter(voter3, { from: owner });
+      
+      const electionInfo = await electra.getElectionInfo();
+      expect(electionInfo.totalVoters.toNumber()).to.equal(3);
+      
+      const voter1Info = await electra.getVoterInfo(voter1);
+      const voter2Info = await electra.getVoterInfo(voter2);
+      const voter3Info = await electra.getVoterInfo(voter3);
+      
+      expect(voter1Info.voterID.toNumber()).to.equal(1);
+      expect(voter2Info.voterID.toNumber()).to.equal(2);
+      expect(voter3Info.voterID.toNumber()).to.equal(3);
     });
   });
-
-  describe("🗳️ Voting Process", () => {
-    beforeEach(async () => {
+  
+  describe("Voting Process", function () {
+    beforeEach(async function () {
+      const currentTime = await time.latest();
+      const registrationDeadline = currentTime.add(time.duration.hours(1));
+      const startTime = registrationDeadline.add(time.duration.minutes(30));
+      const endTime = startTime.add(time.duration.days(1));
+      
+      await electra.createElection(
+        electionTitle,
+        electionDescription,
+        registrationDeadline,
+        startTime,
+        endTime,
+        { from: owner }
+      );
+      
       // Add candidates
-      await electraInstance.addCandidate("Candidate 1", "Party 1", "Manifesto 1", "Hash1", { from: commissioner });
-      await electraInstance.addCandidate("Candidate 2", "Party 2", "Manifesto 2", "Hash2", { from: commissioner });
+      await electra.addCandidate("Candidate 1", "Party 1", "Manifesto 1", { from: owner });
+      await electra.addCandidate("Candidate 2", "Party 2", "Manifesto 2", { from: owner });
       
       // Register voters
-      await electraInstance.registerVoter("Alice", { from: voter1 });
-      await electraInstance.registerVoter("Bob", { from: voter2 });
-      await electraInstance.registerVoter("Charlie", { from: voter3 });
+      await electra.registerVoter(voter1, { from: owner });
+      await electra.registerVoter(voter2, { from: owner });
+      await electra.registerVoter(voter3, { from: owner });
     });
-
-    it("should allow voting when period is active", async () => {
-      await electraInstance.startVoting(1, { from: commissioner });
+    
+    it("Should allow voting after voting starts", async function () {
+      // Start voting
+      await electra.startVoting({ from: owner });
       
-      await electraInstance.vote(1, { from: voter1 });
+      // Cast vote
+      const tx = await electra.vote(1, { from: voter1 });
       
-      const voterInfo = await electraInstance.getVoterInfo(voter1);
-      assert.equal(voterInfo.hasVoted, true, "Voter should have voted");
-      assert.equal(voterInfo.candidateVoted.toNumber(), 1, "Should have voted for candidate 1");
+      // Check event
+      expect(tx.logs[0].event).to.equal("VoteCast");
+      expect(tx.logs[0].args.voter).to.equal(voter1);
+      expect(tx.logs[0].args.candidateID.toNumber()).to.equal(1);
       
-      const candidate = await electraInstance.getCandidateInfo(1);
-      assert.equal(candidate.voteCount.toNumber(), 1, "Candidate should have 1 vote");
+      // Check voter status
+      const voterInfo = await electra.getVoterInfo(voter1);
+      expect(voterInfo.hasVoted).to.equal(true);
+      expect(voterInfo.candidateVoted.toNumber()).to.equal(1);
+      
+      // Check candidate vote count
+      const candidateInfo = await electra.getCandidateInfo(1);
+      expect(candidateInfo.voteCount.toNumber()).to.equal(1);
+      
+      // Check total votes
+      const electionInfo = await electra.getElectionInfo();
+      expect(electionInfo.totalVotes.toNumber()).to.equal(1);
     });
-
-    it("should emit VoteCast event", async () => {
-      await electraInstance.startVoting(1, { from: commissioner });
+    
+    it("Should not allow double voting", async function () {
+      // Start voting
+      await electra.startVoting({ from: owner });
       
-      const result = await electraInstance.vote(1, { from: voter1 });
+      // Cast first vote
+      await electra.vote(1, { from: voter1 });
       
-      truffleAssert.eventEmitted(result, "VoteCast", (ev) => {
-        return ev.voter === voter1 && ev.candidateID.toNumber() === 1;
-      });
+      // Try to vote again
+      try {
+        await electra.vote(2, { from: voter1 });
+        expect.fail("Should have thrown an error");
+      } catch (error) {
+        expect(error.message).to.include("You have already voted");
+      }
     });
-
-    it("should not allow voting before voting starts", async () => {
-      await truffleAssert.reverts(
-        electraInstance.vote(1, { from: voter1 }),
-        "Voting closed"
-      );
+    
+    it("Should not allow voting before registration", async function () {
+      await electra.startVoting({ from: owner });
+      
+      try {
+        await electra.vote(1, { from: voter4 }); // unregistered voter
+        expect.fail("Should have thrown an error");
+      } catch (error) {
+        expect(error.message).to.include("You are not registered to vote");
+      }
     });
-
-    it("should not allow unregistered voters to vote", async () => {
-      await electraInstance.startVoting(1, { from: commissioner });
+    
+    it("Should not allow voting for invalid candidate", async function () {
+      await electra.startVoting({ from: owner });
       
-      await truffleAssert.reverts(
-        electraInstance.vote(1, { from: unauthorized }),
-        "Not registered"
-      );
+      try {
+        await electra.vote(999, { from: voter1 }); // invalid candidate ID
+        expect.fail("Should have thrown an error");
+      } catch (error) {
+        expect(error.message).to.include("Invalid candidate ID");
+      }
     });
-
-    it("should not allow double voting", async () => {
-      await electraInstance.startVoting(1, { from: commissioner });
+    
+    it("Should handle multiple votes correctly", async function () {
+      await electra.startVoting({ from: owner });
       
-      await electraInstance.vote(1, { from: voter1 });
+      // Cast multiple votes
+      await electra.vote(1, { from: voter1 });
+      await electra.vote(2, { from: voter2 });
+      await electra.vote(1, { from: voter3 });
       
-      await truffleAssert.reverts(
-        electraInstance.vote(2, { from: voter1 }),
-        "Already voted"
-      );
-    });
-
-    it("should not allow voting for invalid candidate", async () => {
-      await electraInstance.startVoting(1, { from: commissioner });
+      // Check vote counts
+      const candidate1Info = await electra.getCandidateInfo(1);
+      const candidate2Info = await electra.getCandidateInfo(2);
       
-      await truffleAssert.reverts(
-        electraInstance.vote(999, { from: voter1 }),
-        "Invalid candidate"
-      );
-    });
-
-    it("should calculate votes correctly", async () => {
-      await electraInstance.startVoting(1, { from: commissioner });
+      expect(candidate1Info.voteCount.toNumber()).to.equal(2);
+      expect(candidate2Info.voteCount.toNumber()).to.equal(1);
       
-      await electraInstance.vote(1, { from: voter1 });
-      await electraInstance.vote(1, { from: voter2 });
-      await electraInstance.vote(2, { from: voter3 });
-      
-      const candidate1 = await electraInstance.getCandidateInfo(1);
-      const candidate2 = await electraInstance.getCandidateInfo(2);
-      const stats = await electraInstance.getElectionStats();
-      
-      assert.equal(candidate1.voteCount.toNumber(), 2, "Candidate 1 should have 2 votes");
-      assert.equal(candidate2.voteCount.toNumber(), 1, "Candidate 2 should have 1 vote");
-      assert.equal(stats.totalVotesCount.toNumber(), 3, "Total votes should be 3");
-    });
-  });
-
-  describe("🏆 Election Results", () => {
-    beforeEach(async () => {
-      // Setup election
-      await electraInstance.addCandidate("Winner", "Winning Party", "Winning Manifesto", "WinHash", { from: commissioner });
-      await electraInstance.addCandidate("Runner Up", "Second Party", "Second Manifesto", "SecondHash", { from: commissioner });
-      await electraInstance.addCandidate("Third Place", "Third Party", "Third Manifesto", "ThirdHash", { from: commissioner });
-      
-      // Register voters
-      await electraInstance.registerVoter("Voter1", { from: voter1 });
-      await electraInstance.registerVoter("Voter2", { from: voter2 });
-      await electraInstance.registerVoter("Voter3", { from: voter3 });
-      
-      // Start voting and cast votes
-      await electraInstance.startVoting(1, { from: commissioner });
-      await electraInstance.vote(1, { from: voter1 }); // Winner gets 2 votes
-      await electraInstance.vote(1, { from: voter2 });
-      await electraInstance.vote(2, { from: voter3 }); // Runner up gets 1 vote
-    });
-
-    it("should identify correct winner", async () => {
-      const winner = await electraInstance.getCurrentWinner();
-      
-      assert.equal(winner.winnerID.toNumber(), 1, "Candidate 1 should be winner");
-      assert.equal(winner.winnerName, "Winner", "Winner name should match");
-      assert.equal(winner.winnerParty, "Winning Party", "Winner party should match");
-      assert.equal(winner.maxVotes.toNumber(), 2, "Winner should have 2 votes");
-      assert.equal(winner.totalVotesCount.toNumber(), 3, "Total votes should be 3");
-    });
-
-    it("should allow commissioner to finalize election", async () => {
-      await electraInstance.endVoting({ from: commissioner });
-      
-      const result = await electraInstance.finalizeElection({ from: commissioner });
-      
-      truffleAssert.eventEmitted(result, "ElectionFinalized", (ev) => {
-        return ev.winnerID.toNumber() === 1 && 
-               ev.winnerName === "Winner" && 
-               ev.totalVotes.toNumber() === 2;
-      });
-      
-      const stats = await electraInstance.getElectionStats();
-      assert.equal(stats.finalized, true, "Election should be finalized");
-    });
-
-    it("should not allow finalization during voting", async () => {
-      await truffleAssert.reverts(
-        electraInstance.finalizeElection({ from: commissioner }),
-        "End voting first"
-      );
-    });
-
-    it("should not allow non-commissioner to finalize", async () => {
-      await electraInstance.endVoting({ from: commissioner });
-      
-      await truffleAssert.reverts(
-        electraInstance.finalizeElection({ from: unauthorized }),
-        "Only commissioner"
-      );
+      // Check total votes
+      const electionInfo = await electra.getElectionInfo();
+      expect(electionInfo.totalVotes.toNumber()).to.equal(3);
     });
   });
-
-  describe("🔒 Security Features", () => {
-    beforeEach(async () => {
-      await electraInstance.addCandidate("Test Candidate", "Test Party", "Test Manifesto", "TestHash", { from: commissioner });
-      await electraInstance.registerVoter("Test Voter", { from: voter1 });
-    });
-
-    it("should allow commissioner to pause contract", async () => {
-      await electraInstance.pause({ from: commissioner });
+  
+  describe("Election Results", function () {
+    beforeEach(async function () {
+      const currentTime = await time.latest();
+      const registrationDeadline = currentTime.add(time.duration.hours(1));
+      const startTime = registrationDeadline.add(time.duration.minutes(30));
+      const endTime = startTime.add(time.duration.hours(2));
       
-      await truffleAssert.reverts(
-        electraInstance.registerVoter("Paused Voter", { from: voter2 }),
-        "Pausable: paused"
+      await electra.createElection(
+        electionTitle,
+        electionDescription,
+        registrationDeadline,
+        startTime,
+        endTime,
+        { from: owner }
       );
+      
+      // Add candidates
+      await electra.addCandidate("Alice Johnson", "Party A", "Manifesto A", { from: owner });
+      await electra.addCandidate("Bob Smith", "Party B", "Manifesto B", { from: owner });
+      await electra.addCandidate("Carol Brown", "Party C", "Manifesto C", { from: owner });
+      
+      // Register and vote
+      await electra.registerVoter(voter1, { from: owner });
+      await electra.registerVoter(voter2, { from: owner });
+      await electra.registerVoter(voter3, { from: owner });
+      await electra.registerVoter(voter4, { from: owner });
+      await electra.registerVoter(voter5, { from: owner });
+      
+      await electra.startVoting({ from: owner });
+      
+      // Cast votes: Alice=3, Bob=1, Carol=1
+      await electra.vote(1, { from: voter1 });
+      await electra.vote(1, { from: voter2 });
+      await electra.vote(1, { from: voter3 });
+      await electra.vote(2, { from: voter4 });
+      await electra.vote(3, { from: voter5 });
     });
-
-    it("should allow commissioner to unpause contract", async () => {
-      await electraInstance.pause({ from: commissioner });
-      await electraInstance.unpause({ from: commissioner });
+    
+    it("Should calculate winner correctly", async function () {
+      const currentWinner = await electra.getCurrentWinner();
       
-      // Should work after unpause
-      await electraInstance.registerVoter("Unpaused Voter", { from: voter2 });
-      
-      const voterInfo = await electraInstance.getVoterInfo(voter2);
-      assert.equal(voterInfo.isRegistered, true, "Voter should be registered after unpause");
+      expect(currentWinner.winnerID.toNumber()).to.equal(1);
+      expect(currentWinner.winnerName).to.equal("Alice Johnson");
+      expect(currentWinner.winnerParty).to.equal("Party A");
+      expect(currentWinner.maxVotes.toNumber()).to.equal(3);
+      expect(currentWinner.isTie).to.equal(false);
     });
-
-    it("should not allow non-commissioner to pause", async () => {
-      await truffleAssert.reverts(
-        electraInstance.pause({ from: unauthorized }),
-        "Only commissioner"
-      );
+    
+    it("Should finalize election correctly", async function () {
+      // End voting first
+      await electra.endVoting({ from: owner });
+      
+      // Move time forward past election end
+      await time.increase(time.duration.hours(3));
+      
+      // Finalize election
+      const tx = await electra.finalizeElection({ from: owner });
+      
+      // Check event
+      expect(tx.logs[0].event).to.equal("ElectionFinalized");
+      expect(tx.logs[0].args.winnerID.toNumber()).to.equal(1);
+      expect(tx.logs[0].args.winnerName).to.equal("Alice Johnson");
+      expect(tx.logs[0].args.totalVotes.toNumber()).to.equal(3);
+      
+      // Check election status
+      const electionInfo = await electra.getElectionInfo();
+      expect(electionInfo.isFinalized).to.equal(true);
+      expect(electionInfo.isActive).to.equal(false);
+      expect(electionInfo.winnerID.toNumber()).to.equal(1);
     });
-
-    it("should create verifiable vote hashes", async () => {
-      await electraInstance.startVoting(1, { from: commissioner });
-      await electraInstance.vote(1, { from: voter1 });
+    
+    it("Should provide correct election statistics", async function () {
+      const stats = await electra.getElectionStatistics();
       
-      const voteRecord = await electraInstance.getVoteRecord(1);
-      assert.equal(voteRecord.voter, voter1, "Vote record should have correct voter");
-      assert.equal(voteRecord.candidateID.toNumber(), 1, "Vote record should have correct candidate");
-      
-      // Verify hash
-      const isValid = await electraInstance.verifyVoteHash(
-        1,
-        voteRecord.voter,
-        voteRecord.candidateID,
-        voteRecord.timestamp
-      );
-      assert.equal(isValid, true, "Vote hash should be valid");
-    });
-
-    it("should detect invalid vote hashes", async () => {
-      await electraInstance.startVoting(1, { from: commissioner });
-      await electraInstance.vote(1, { from: voter1 });
-      
-      // Try to verify with wrong data
-      const isValid = await electraInstance.verifyVoteHash(
-        1,
-        voter2, // Wrong voter
-        1,
-        Math.floor(Date.now() / 1000) // Wrong timestamp
-      );
-      assert.equal(isValid, false, "Vote hash should be invalid with wrong data");
+      expect(stats.totalRegisteredVoters.toNumber()).to.equal(5);
+      expect(stats.totalVotesCast.toNumber()).to.equal(5);
+      expect(stats.voterTurnoutPercentage.toNumber()).to.equal(100);
+      expect(stats.activeCandidates.toNumber()).to.equal(3);
+      expect(stats.totalCandidatesCount.toNumber()).to.equal(3);
+      expect(stats.hasWinner).to.equal(false); // Not finalized yet
+      expect(stats.electionComplete).to.equal(false);
     });
   });
-
-  describe("⚙️ Election Management", () => {
-    it("should allow starting voting with minimum candidates", async () => {
-      await electraInstance.addCandidate("Candidate 1", "Party 1", "Manifesto 1", "Hash1", { from: commissioner });
-      await electraInstance.addCandidate("Candidate 2", "Party 2", "Manifesto 2", "Hash2", { from: commissioner });
+  
+  describe("Vote Verification", function () {
+    let voterHash;
+    
+    beforeEach(async function () {
+      const currentTime = await time.latest();
+      const registrationDeadline = currentTime.add(time.duration.hours(1));
+      const startTime = registrationDeadline.add(time.duration.minutes(30));
+      const endTime = startTime.add(time.duration.hours(2));
       
-      await electraInstance.startVoting(1, { from: commissioner });
-      
-      const stats = await electraInstance.getElectionStats();
-      assert.equal(stats.votingActive, true, "Voting should be active");
-      assert.equal(stats.registrationActive, false, "Registration should be closed");
-    });
-
-    it("should not allow starting voting with insufficient candidates", async () => {
-      await electraInstance.addCandidate("Only Candidate", "Only Party", "Only Manifesto", "OnlyHash", { from: commissioner });
-      
-      await truffleAssert.reverts(
-        electraInstance.startVoting(1, { from: commissioner }),
-        "Need at least 2 candidates"
+      await electra.createElection(
+        electionTitle,
+        electionDescription,
+        registrationDeadline,
+        startTime,
+        endTime,
+        { from: owner }
       );
+      
+      await electra.addCandidate("Test Candidate", "Test Party", "Test Manifesto", { from: owner });
+      await electra.registerVoter(voter1, { from: owner });
+      
+      // Get verification hash
+      const voterInfo = await electra.getVoterInfo(voter1);
+      voterHash = voterInfo.verificationHash;
+      
+      await electra.startVoting({ from: owner });
+      await electra.vote(1, { from: voter1 });
     });
-
-    it("should allow extending voting period", async () => {
-      await electraInstance.addCandidate("Candidate 1", "Party 1", "Manifesto 1", "Hash1", { from: commissioner });
-      await electraInstance.addCandidate("Candidate 2", "Party 2", "Manifesto 2", "Hash2", { from: commissioner });
-      
-      await electraInstance.startVoting(1, { from: commissioner });
-      
-      const statsBefore = await electraInstance.getElectionStats();
-      const endTimeBefore = statsBefore.endTime.toNumber();
-      
-      await electraInstance.extendVoting(2, { from: commissioner }); // Extend by 2 hours
-      
-      const statsAfter = await electraInstance.getElectionStats();
-      const endTimeAfter = statsAfter.endTime.toNumber();
-      
-      assert.equal(endTimeAfter, endTimeBefore + (2 * 3600), "End time should be extended by 2 hours");
+    
+    it("Should verify votes correctly", async function () {
+      const isValid = await electra.verifyVote(voter1, voterHash);
+      expect(isValid).to.equal(true);
     });
-
-    it("should allow deactivating candidates", async () => {
-      await electraInstance.addCandidate("Candidate 1", "Party 1", "Manifesto 1", "Hash1", { from: commissioner });
-      
-      await electraInstance.deactivateCandidate(1, { from: commissioner });
-      
-      const candidate = await electraInstance.getCandidateInfo(1);
-      assert.equal(candidate.isActive, false, "Candidate should be deactivated");
+    
+    it("Should reject invalid verification hash", async function () {
+      const invalidHash = "0x0000000000000000000000000000000000000000000000000000000000000000";
+      const isValid = await electra.verifyVote(voter1, invalidHash);
+      expect(isValid).to.equal(false);
     });
-
-    it("should check if voting is currently active", async () => {
-      await electraInstance.addCandidate("Candidate 1", "Party 1", "Manifesto 1", "Hash1", { from: commissioner });
-      await electraInstance.addCandidate("Candidate 2", "Party 2", "Manifesto 2", "Hash2", { from: commissioner });
+    
+    it("Should create vote records", async function () {
+      const voteRecord = await electra.getVoteRecord(1);
       
-      let isActive = await electraInstance.isVotingActive();
-      assert.equal(isActive, false, "Voting should not be active initially");
+      expect(voteRecord.voter).to.equal(voter1);
+      expect(voteRecord.candidateID.toNumber()).to.equal(1);
+      expect(voteRecord.timestamp.toNumber()).to.be.greaterThan(0);
+    });
+  });
+  
+  describe("Emergency Controls", function () {
+    beforeEach(async function () {
+      const currentTime = await time.latest();
+      const registrationDeadline = currentTime.add(time.duration.hours(1));
+      const startTime = registrationDeadline.add(time.duration.minutes(30));
+      const endTime = startTime.add(time.duration.hours(2));
       
-      await electraInstance.startVoting(1, { from: commissioner });
+      await electra.createElection(
+        electionTitle,
+        electionDescription,
+        registrationDeadline,
+        startTime,
+        endTime,
+        { from: owner }
+      );
       
-      isActive = await electraInstance.isVotingActive();
-      assert.equal(isActive, true, "Voting should be active after starting");
+      await electra.addCandidate("Test Candidate", "Test Party", "Test Manifesto", { from: owner });
+      await electra.startVoting({ from: owner });
+    });
+    
+    it("Should extend voting period", async function () {
+      const electionInfoBefore = await electra.getElectionInfo();
+      const originalEndTime = electionInfoBefore.endTime.toNumber();
+      
+      const tx = await electra.extendVotingPeriod(2, { from: owner }); // Extend by 2 hours
+      
+      expect(tx.logs[0].event).to.equal("VotingExtended");
+      
+      const electionInfoAfter = await electra.getElectionInfo();
+      const newEndTime = electionInfoAfter.endTime.toNumber();
+      
+      expect(newEndTime).to.equal(originalEndTime + (2 * 60 * 60)); // 2 hours added
+    });
+    
+    it("Should pause and unpause system", async function () {
+      // Pause system
+      await electra.pauseSystem({ from: owner });
+      let systemStats = await electra.getSystemStats();
+      expect(systemStats.paused).to.equal(true);
+      
+      // Unpause system
+      await electra.unpauseSystem({ from: owner });
+      systemStats = await electra.getSystemStats();
+      expect(systemStats.paused).to.equal(false);
+    });
+    
+    it("Should activate emergency mode", async function () {
+      await electra.activateEmergency({ from: owner });
+      
+      const systemStats = await electra.getSystemStats();
+      expect(systemStats.emergency).to.equal(true);
+      expect(systemStats.paused).to.equal(true); // Auto-paused
+    });
+  });
+  
+  describe("Edge Cases", function () {
+    it("Should handle tie detection", async function () {
+      const currentTime = await time.latest();
+      const registrationDeadline = currentTime.add(time.duration.hours(1));
+      const startTime = registrationDeadline.add(time.duration.minutes(30));
+      const endTime = startTime.add(time.duration.hours(2));
+      
+      await electra.createElection(
+        electionTitle,
+        electionDescription,
+        registrationDeadline,
+        startTime,
+        endTime,
+        { from: owner }
+      );
+      
+      await electra.addCandidate("Candidate 1", "Party 1", "Manifesto 1", { from: owner });
+      await electra.addCandidate("Candidate 2", "Party 2", "Manifesto 2", { from: owner });
+      
+      await electra.registerVoter(voter1, { from: owner });
+      await electra.registerVoter(voter2, { from: owner });
+      
+      await electra.startVoting({ from: owner });
+      
+      // Create a tie
+      await electra.vote(1, { from: voter1 });
+      await electra.vote(2, { from: voter2 });
+      
+      const currentWinner = await electra.getCurrentWinner();
+      expect(currentWinner.isTie).to.equal(true);
+    });
+    
+    it("Should handle zero votes scenario", async function () {
+      const currentTime = await time.latest();
+      const registrationDeadline = currentTime.add(time.duration.hours(1));
+      const startTime = registrationDeadline.add(time.duration.minutes(30));
+      const endTime = startTime.add(time.duration.hours(2));
+      
+      await electra.createElection(
+        electionTitle,
+        electionDescription,
+        registrationDeadline,
+        startTime,
+        endTime,
+        { from: owner }
+      );
+      
+      await electra.addCandidate("Candidate 1", "Party 1", "Manifesto 1", { from: owner });
+      await electra.startVoting({ from: owner });
+      await electra.endVoting({ from: owner });
+      
+      // Move time forward
+      await time.increase(time.duration.hours(3));
+      
+      try {
+        await electra.finalizeElection({ from: owner });
+        expect.fail("Should have thrown an error");
+      } catch (error) {
+        expect(error.message).to.include("No votes cast");
+      }
     });
   });
 });
