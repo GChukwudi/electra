@@ -1,6 +1,3 @@
-/**
- * ResultsDisplay Component - Displays detailed election results
- */
 
 import React from 'react';
 import { web3Utils } from '../utils/web3Utils';

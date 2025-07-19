@@ -1,8 +1,3 @@
-/**
- * Navbar Component - Navigation bar for Electra
- * Provides navigation and wallet connection interface
- */
-
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useWeb3 } from '../contexts/Web3Context';

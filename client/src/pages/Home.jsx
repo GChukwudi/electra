@@ -1,8 +1,3 @@
-/**
- * Home Page - Landing page for Electra voting system
- * Main dashboard showing election overview and status
- */
-
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useWeb3 } from '../contexts/Web3Context';

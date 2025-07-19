@@ -1,7 +1,3 @@
-/**
- * VoterDashboard Component - Displays voter information and status
- */
-
 import React from 'react';
 import { useWeb3 } from '../contexts/Web3Context';
 import { useElection } from '../contexts/ElectionContext';

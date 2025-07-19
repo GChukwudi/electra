@@ -1,7 +1,3 @@
-/**
- * Admin Page - Election administration interface
- */
-
 import React, { useState } from 'react';
 import { useWeb3 } from '../contexts/Web3Context';
 import { useElection } from '../contexts/ElectionContext';
