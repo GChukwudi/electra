@@ -1,8 +1,3 @@
-/**
- * Electra deployment migration
- * Deploys the main Electra voting contract
- */
-
 const Electra = artifacts.require("Electra");
 
 module.exports = async function (deployer, network, accounts) {
