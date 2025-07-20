@@ -1,8 +1,3 @@
-/**
- * VotingInterface Component - Interface for casting votes
- * Secure voting interface with candidate selection and confirmation
- */
-
 import React, { useState, useEffect } from 'react';
 import { useElection } from '../contexts/ElectionContext';
 import { web3Utils } from '../utils/web3Utils';

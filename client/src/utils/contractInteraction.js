@@ -1,9 +1,3 @@
-/**
- * Enhanced Contract Interaction Utilities for Electra Voting System
- * Improved version with better security, performance, and error handling
- * @author God's Favour Chukwudi
- */
-
 import { web3Utils } from './web3Utils';
 
 // ==================== CONFIGURATION ====================

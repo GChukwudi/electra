@@ -324,7 +324,7 @@ contract ElectraAccessControl {
      * @param _role Role to check
      * @return Whether the user has the role
      */
-    function hasRole(address _user, Role _role) external view returns (bool) {
+    function checkRole(address _user, Role _role) external view returns (bool) {
         return users[_user].role == _role && users[_user].isActive;
     }
     
@@ -334,7 +334,7 @@ contract ElectraAccessControl {
      * @param _roles Array of roles to check
      * @return Whether the user has any of the roles
      */
-    function hasAnyRole(address _user, Role[] memory _roles) external view returns (bool) {
+    function onlyAnyRole(address _user, Role[] memory _roles) external view returns (bool) {
         if (!users[_user].isActive) return false;
         
         Role userRole = users[_user].role;
@@ -344,11 +344,11 @@ contract ElectraAccessControl {
         return false;
     }
     
-    /**
-     * @dev Get user information
-     * @param _user Address of the user
-     * @return User information
-     */
+    // /**
+    //  * @dev Get user information
+    //  * @param _user Address of the user
+    //  * @return User information
+    //  */
     function getUserInfo(address _user) 
         external 
         view 
@@ -358,10 +358,10 @@ contract ElectraAccessControl {
         return (user.role, user.isActive, user.assignedAt, user.assignedBy);
     }
     
-    /**
-     * @dev Get system statistics
-     * @return System statistics
-     */
+    // /**
+    //  * @dev Get system statistics
+    //  * @return System statistics
+    //  */
     function getSystemStats() 
         external 
         view 

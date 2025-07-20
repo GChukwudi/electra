@@ -523,11 +523,11 @@ contract Electra is ElectraAccessControl {
     
     // ==================== VIEW FUNCTIONS ====================
     
-    /**
-     * @dev Get voter information
-     * @param _voterAddress Address of the voter
-     * @return Voter information
-     */
+    // /**
+    //  * @dev Get voter information
+    //  * @param _voterAddress Address of the voter
+    //  * @return Voter information
+    //  */
     function getVoterInfo(address _voterAddress) 
         external 
         view 
@@ -549,11 +549,6 @@ contract Electra is ElectraAccessControl {
         );
     }
     
-    /**
-     * @dev Get candidate information
-     * @param _candidateID ID of the candidate
-     * @return Candidate information
-     */
     function getCandidateInfo(uint256 _candidateID) 
         external 
         view 
@@ -576,10 +571,10 @@ contract Electra is ElectraAccessControl {
         );
     }
     
-    /**
-     * @dev Get all candidates information
-     * @return Arrays of candidate information
-     */
+    // /**
+    //  * @dev Get all candidates information
+    //  * @return Arrays of candidate information
+    //  */
     function getAllCandidates() 
         external 
         view 
@@ -606,10 +601,6 @@ contract Electra is ElectraAccessControl {
         }
     }
     
-    /**
-     * @dev Get election information
-     * @return Election information
-     */
     function getElectionInfo() 
         external 
         view 
@@ -640,10 +631,10 @@ contract Electra is ElectraAccessControl {
         );
     }
     
-    /**
-     * @dev Get current election status
-     * @return Status information
-     */
+    // /**
+    //  * @dev Get current election status
+    //  * @return Status information
+    //  */
     function getElectionStatus() 
         external 
         view 
@@ -672,10 +663,6 @@ contract Electra is ElectraAccessControl {
                                        currentElection.registrationDeadline - block.timestamp : 0;
     }
     
-    /**
-     * @dev Get current winner (can be called during or after election)
-     * @return Winner information
-     */
     function getCurrentWinner() 
         external 
         view 
@@ -697,11 +684,11 @@ contract Electra is ElectraAccessControl {
         }
     }
     
-    /**
-     * @dev Get vote record by ID
-     * @param _recordID Vote record ID
-     * @return Vote record information
-     */
+    // /**
+    //  * @dev Get vote record by ID
+    //  * @param _recordID Vote record ID
+    //  * @return Vote record information
+    //  */
     function getVoteRecord(uint256 _recordID) 
         external 
         view 
@@ -731,10 +718,10 @@ contract Electra is ElectraAccessControl {
         return voters[_voter].verificationHash == _hash && voters[_voter].hasVoted;
     }
     
-    /**
-     * @dev Get election statistics
-     * @return Comprehensive election statistics
-     */
+    // /**
+    //  * @dev Get election statistics
+    //  * @return Comprehensive election statistics
+    //  */
     function getElectionStatistics() 
         external 
         view 
@@ -783,10 +770,10 @@ contract Electra is ElectraAccessControl {
         return winnerID;
     }
     
-    /**
-     * @dev Calculate winner with tie detection
-     * @return Winner ID, vote count, and tie status
-     */
+    // /**
+    //  * @dev Calculate winner with tie detection
+    //  * @return Winner ID, vote count, and tie status
+    //  */
     function _calculateWinnerWithTieCheck() 
         internal 
         view 

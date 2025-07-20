@@ -1,9 +1,3 @@
-/**
- * useContract Hook - Contract Management and Interaction
- * Provides a clean interface for managing contract connections and basic operations
- * @author God's Favour Chukwudi
- */
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWeb3 } from '../contexts/Web3Context';
 import { contractInteraction, getContract, validateContract } from '../utils/contractInteraction';

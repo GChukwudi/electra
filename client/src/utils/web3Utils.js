@@ -1,21 +1,5 @@
-/**
- * Web3 Utility Functions for Electra Voting System
- * Helper functions for Web3 operations, formatting, and error handling
- * @author God's Favour Chukwudi
- */
-
-/**
- * Web3 utility functions
- */
 export const web3Utils = {
-  
-  // ==================== ADDRESS UTILITIES ====================
-  
-  /**
-   * Format address for display (shows first 6 and last 4 characters)
-   * @param {string} address - Ethereum address
-   * @returns {string} Formatted address
-   */
+
   formatAddress(address) {
     if (!address) return '';
     if (address.length < 10) return address;

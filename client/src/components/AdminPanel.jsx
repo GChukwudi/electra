@@ -1,8 +1,3 @@
-/**
- * AdminPanel Component - Comprehensive Election Administration Interface
- * Modern, responsive admin panel with complete election management capabilities
- */
-
 import React, { useState, useEffect } from 'react';
 import { useElection } from '../contexts/ElectionContext';
 import { useWeb3 } from '../contexts/Web3Context';

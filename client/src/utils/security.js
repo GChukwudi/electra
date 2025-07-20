@@ -1,12 +1,3 @@
-/**
- * Security Utilities for Electra Voting System
- * Handles input validation, rate limiting, and security checks
- * @author God's Favour Chukwudi
- */
-
-/**
- * Security utility functions
- */
 export const security = {
   
   // ==================== INPUT VALIDATION ====================
