@@ -65,7 +65,7 @@ contract("Electra", function (accounts) {
         { from: owner }
       );
       
-      // Check event
+      // Check event - FIXED: Check actual title instead of hash
       expect(tx.logs[0].event).to.equal("ElectionCreated");
       expect(tx.logs[0].args.title).to.equal(electionTitle);
       
@@ -153,7 +153,7 @@ contract("Electra", function (accounts) {
         { from: owner }
       );
       
-      // Check event
+      // Check event - FIXED: Check actual name instead of hash
       expect(tx.logs[0].event).to.equal("CandidateAdded");
       expect(tx.logs[0].args.name).to.equal("John Doe");
       
@@ -228,11 +228,12 @@ contract("Electra", function (accounts) {
       expect(tx.logs[0].event).to.equal("VoterRegistered");
       expect(tx.logs[0].args.voter).to.equal(voter1);
       
-      // Check voter info
+      // Check voter info - FIXED: Handle all return values
       const voterInfo = await electra.getVoterInfo(voter1);
       expect(voterInfo.isRegistered).to.equal(true);
       expect(voterInfo.hasVoted).to.equal(false);
       expect(voterInfo.voterID.toNumber()).to.equal(1);
+      expect(voterInfo.verificationHash).to.not.equal("0x0000000000000000000000000000000000000000000000000000000000000000");
       
       const electionInfo = await electra.getElectionInfo();
       expect(electionInfo.totalVoters.toNumber()).to.equal(1);
@@ -279,10 +280,11 @@ contract("Electra", function (accounts) {
   
   describe("Voting Process", function () {
     beforeEach(async function () {
+      // FIXED: Use shorter timeframes and advance time properly
       const currentTime = await time.latest();
-      const registrationDeadline = currentTime.add(time.duration.hours(1));
-      const startTime = registrationDeadline.add(time.duration.minutes(30));
-      const endTime = startTime.add(time.duration.days(1));
+      const registrationDeadline = currentTime.add(time.duration.minutes(30));
+      const startTime = registrationDeadline.add(time.duration.minutes(10));
+      const endTime = startTime.add(time.duration.hours(24));
       
       await electra.createElection(
         electionTitle,
@@ -304,7 +306,7 @@ contract("Electra", function (accounts) {
     });
     
     it("Should allow voting after voting starts", async function () {
-      // Start voting
+      // FIXED: Start voting manually (commissioner can override timing)
       await electra.startVoting({ from: owner });
       
       // Cast vote
@@ -390,9 +392,10 @@ contract("Electra", function (accounts) {
   
   describe("Election Results", function () {
     beforeEach(async function () {
+      // FIXED: Use shorter timeframes
       const currentTime = await time.latest();
-      const registrationDeadline = currentTime.add(time.duration.hours(1));
-      const startTime = registrationDeadline.add(time.duration.minutes(30));
+      const registrationDeadline = currentTime.add(time.duration.minutes(30));
+      const startTime = registrationDeadline.add(time.duration.minutes(10));
       const endTime = startTime.add(time.duration.hours(2));
       
       await electra.createElection(
@@ -477,8 +480,8 @@ contract("Electra", function (accounts) {
     
     beforeEach(async function () {
       const currentTime = await time.latest();
-      const registrationDeadline = currentTime.add(time.duration.hours(1));
-      const startTime = registrationDeadline.add(time.duration.minutes(30));
+      const registrationDeadline = currentTime.add(time.duration.minutes(30));
+      const startTime = registrationDeadline.add(time.duration.minutes(10));
       const endTime = startTime.add(time.duration.hours(2));
       
       await electra.createElection(
@@ -524,8 +527,8 @@ contract("Electra", function (accounts) {
   describe("Emergency Controls", function () {
     beforeEach(async function () {
       const currentTime = await time.latest();
-      const registrationDeadline = currentTime.add(time.duration.hours(1));
-      const startTime = registrationDeadline.add(time.duration.minutes(30));
+      const registrationDeadline = currentTime.add(time.duration.minutes(30));
+      const startTime = registrationDeadline.add(time.duration.minutes(10));
       const endTime = startTime.add(time.duration.hours(2));
       
       await electra.createElection(
@@ -537,7 +540,8 @@ contract("Electra", function (accounts) {
         { from: owner }
       );
       
-      await electra.addCandidate("Test Candidate", "Test Party", "Test Manifesto", { from: owner });
+      await electra.addCandidate("Test Candidate 1", "Test Party 1", "Test Manifesto 1", { from: owner });
+      await electra.addCandidate("Test Candidate 2", "Test Party 2", "Test Manifesto 2", { from: owner });
       await electra.startVoting({ from: owner });
     });
     
@@ -579,8 +583,8 @@ contract("Electra", function (accounts) {
   describe("Edge Cases", function () {
     it("Should handle tie detection", async function () {
       const currentTime = await time.latest();
-      const registrationDeadline = currentTime.add(time.duration.hours(1));
-      const startTime = registrationDeadline.add(time.duration.minutes(30));
+      const registrationDeadline = currentTime.add(time.duration.minutes(30));
+      const startTime = registrationDeadline.add(time.duration.minutes(10));
       const endTime = startTime.add(time.duration.hours(2));
       
       await electra.createElection(
@@ -610,8 +614,8 @@ contract("Electra", function (accounts) {
     
     it("Should handle zero votes scenario", async function () {
       const currentTime = await time.latest();
-      const registrationDeadline = currentTime.add(time.duration.hours(1));
-      const startTime = registrationDeadline.add(time.duration.minutes(30));
+      const registrationDeadline = currentTime.add(time.duration.minutes(30));
+      const startTime = registrationDeadline.add(time.duration.minutes(10));
       const endTime = startTime.add(time.duration.hours(2));
       
       await electra.createElection(
@@ -624,6 +628,7 @@ contract("Electra", function (accounts) {
       );
       
       await electra.addCandidate("Candidate 1", "Party 1", "Manifesto 1", { from: owner });
+      await electra.addCandidate("Candidate 2", "Party 2", "Manifesto 2", { from: owner });
       await electra.startVoting({ from: owner });
       await electra.endVoting({ from: owner });
       

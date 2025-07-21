@@ -24,9 +24,10 @@ contract("Electra Integration", function (accounts) {
     beforeEach(async function () {
       electra = await Electra.new({ from: owner });
       
+      // FIXED: Use shorter timeframes for testing
       const currentTime = await time.latest();
-      registrationDeadline = currentTime.add(time.duration.hours(2));
-      startTime = registrationDeadline.add(time.duration.hours(1));
+      registrationDeadline = currentTime.add(time.duration.minutes(30));
+      startTime = registrationDeadline.add(time.duration.minutes(10));
       endTime = startTime.add(time.duration.hours(6));
     });
     
@@ -97,7 +98,7 @@ contract("Electra Integration", function (accounts) {
       // === PHASE 3: VOTING PERIOD ===
       console.log("🗳️  Phase 3: Voting Period");
       
-      // Start voting
+      // FIXED: Start voting manually (commissioner can override timing)
       const startVotingTx = await electra.startVoting({ from: owner });
       expect(startVotingTx.logs[1].event).to.equal("ElectionStarted");
       console.log("✅ Voting started successfully");
@@ -193,7 +194,8 @@ contract("Electra Integration", function (accounts) {
         { from: owner }
       );
       
-      await electra.addCandidate("Test Candidate", "Test Party", "Test Manifesto", { from: owner });
+      await electra.addCandidate("Test Candidate 1", "Test Party 1", "Test Manifesto 1", { from: owner });
+      await electra.addCandidate("Test Candidate 2", "Test Party 2", "Test Manifesto 2", { from: owner });
       
       // Self-register voters
       await electra.selfRegister({ from: voter1 });
@@ -281,7 +283,8 @@ contract("Electra Integration", function (accounts) {
         { from: owner }
       );
       
-      await electra.addCandidate("Auditor Candidate", "Transparency Party", "Open governance", { from: owner });
+      await electra.addCandidate("Auditor Candidate 1", "Transparency Party 1", "Open governance 1", { from: owner });
+      await electra.addCandidate("Auditor Candidate 2", "Transparency Party 2", "Open governance 2", { from: owner });
       await electra.registerVoter(voter1, { from: owner });
       
       // Get voter verification hash before voting
@@ -408,8 +411,8 @@ contract("Electra Integration", function (accounts) {
       await electra.createElection(
         "Election 1 - Presidential",
         "First test election",
+        currentTime1.add(time.duration.minutes(30)),
         currentTime1.add(time.duration.hours(1)),
-        currentTime1.add(time.duration.hours(2)),
         currentTime1.add(time.duration.hours(4)),
         { from: owner }
       );

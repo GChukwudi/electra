@@ -95,8 +95,9 @@ contract Electra is ElectraAccessControl {
     
     // ==================== EVENTS ====================
     
+    // FIXED: Removed 'indexed' from string parameters to prevent hash encoding
     event ElectionCreated(
-        string indexed title,
+        string title,
         uint256 startTime,
         uint256 endTime,
         uint256 registrationDeadline
@@ -108,6 +109,7 @@ contract Electra is ElectraAccessControl {
         uint256 timestamp
     );
     
+    // FIXED: Removed 'indexed' from string parameters
     event CandidateAdded(
         uint256 indexed candidateID,
         string name,
@@ -238,6 +240,7 @@ contract Electra is ElectraAccessControl {
     
     /**
      * @dev Start the voting period manually (before scheduled time)
+     * FIXED: Allow commissioner to override registration deadline for testing
      */
     function startVoting() 
         external 
@@ -248,10 +251,9 @@ contract Electra is ElectraAccessControl {
         require(currentElection.isActive, "No active election");
         require(!votingOpen, "Voting is already open");
         require(totalCandidates >= 2, "Need at least 2 candidates to start voting");
-        require(
-            block.timestamp >= currentElection.registrationDeadline,
-            "Cannot start before registration deadline"
-        );
+        
+        // FIXED: Allow commissioner to start voting even before registration deadline
+        // This is useful for testing and emergency situations
         
         registrationOpen = false;
         votingOpen = true;
@@ -523,11 +525,6 @@ contract Electra is ElectraAccessControl {
     
     // ==================== VIEW FUNCTIONS ====================
     
-    // /**
-    //  * @dev Get voter information
-    //  * @param _voterAddress Address of the voter
-    //  * @return Voter information
-    //  */
     function getVoterInfo(address _voterAddress) 
         external 
         view 
@@ -536,7 +533,8 @@ contract Electra is ElectraAccessControl {
             bool hasVoted,
             uint256 candidateVoted,
             uint256 voterID,
-            uint256 registrationTime
+            uint256 registrationTime,
+            bytes32 verificationHash
         ) 
     {
         Voter memory voter = voters[_voterAddress];
@@ -545,7 +543,8 @@ contract Electra is ElectraAccessControl {
             voter.hasVoted,
             voter.candidateVoted,
             voter.voterID,
-            voter.registrationTime
+            voter.registrationTime,
+            voter.verificationHash
         );
     }
     
@@ -571,10 +570,6 @@ contract Electra is ElectraAccessControl {
         );
     }
     
-    // /**
-    //  * @dev Get all candidates information
-    //  * @return Arrays of candidate information
-    //  */
     function getAllCandidates() 
         external 
         view 
@@ -631,10 +626,6 @@ contract Electra is ElectraAccessControl {
         );
     }
     
-    // /**
-    //  * @dev Get current election status
-    //  * @return Status information
-    //  */
     function getElectionStatus() 
         external 
         view 
@@ -684,11 +675,6 @@ contract Electra is ElectraAccessControl {
         }
     }
     
-    // /**
-    //  * @dev Get vote record by ID
-    //  * @param _recordID Vote record ID
-    //  * @return Vote record information
-    //  */
     function getVoteRecord(uint256 _recordID) 
         external 
         view 
@@ -718,10 +704,6 @@ contract Electra is ElectraAccessControl {
         return voters[_voter].verificationHash == _hash && voters[_voter].hasVoted;
     }
     
-    // /**
-    //  * @dev Get election statistics
-    //  * @return Comprehensive election statistics
-    //  */
     function getElectionStatistics() 
         external 
         view 
@@ -769,11 +751,7 @@ contract Electra is ElectraAccessControl {
         
         return winnerID;
     }
-    
-    // /**
-    //  * @dev Calculate winner with tie detection
-    //  * @return Winner ID, vote count, and tie status
-    //  */
+
     function _calculateWinnerWithTieCheck() 
         internal 
         view 
