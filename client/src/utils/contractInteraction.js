@@ -56,8 +56,6 @@ const contractCache = new ContractCache();
 
 const ELECTRA_ABI = Electra.abi || Electra.abi; // Fallback for ABI import
 
-// ==================== CONTRACT MANAGEMENT ====================
-
 class ContractManager {
   constructor() {
     this.contracts = new Map();
@@ -129,8 +127,6 @@ class ContractManager {
 }
 
 const contractManager = new ContractManager();
-
-// ==================== ENHANCED ERROR HANDLING ====================
 
 class ContractError extends Error {
   constructor(message, code = null, data = null) {
