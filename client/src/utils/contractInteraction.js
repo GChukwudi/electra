@@ -1,6 +1,8 @@
-import { web3Utils } from './web3Utils';
+/* eslint-disable react-hooks/rules-of-hooks */
+// This file contains utility classes and functions, not React components
 
-// ==================== CONFIGURATION ====================
+import { web3Utils } from './web3Utils';
+import Electra from '../contracts/Electra.json';
 
 const CONFIG = {
   MAX_RETRIES: 3,
@@ -52,212 +54,7 @@ class ContractCache {
 
 const contractCache = new ContractCache();
 
-const ELECTRA_ABI = [
-  // Core Functions
-  {
-    "inputs": [
-      {"name": "_title", "type": "string"},
-      {"name": "_description", "type": "string"},
-      {"name": "_registrationDeadline", "type": "uint256"},
-      {"name": "_startTime", "type": "uint256"},
-      {"name": "_endTime", "type": "uint256"}
-    ],
-    "name": "createElection",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  
-  // Voting Functions
-  {
-    "inputs": [{"name": "_candidateID", "type": "uint256"}],
-    "name": "vote",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  
-  // Admin Functions
-  {
-    "inputs": [
-      {"name": "_name", "type": "string"},
-      {"name": "_party", "type": "string"},
-      {"name": "_manifesto", "type": "string"}
-    ],
-    "name": "addCandidate",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  
-  {
-    "inputs": [{"name": "_voterAddress", "type": "address"}],
-    "name": "registerVoter",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  
-  {
-    "inputs": [],
-    "name": "selfRegister",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  
-  // Control Functions
-  {
-    "inputs": [],
-    "name": "startVoting",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  
-  {
-    "inputs": [],
-    "name": "endVoting",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  
-  {
-    "inputs": [],
-    "name": "finalizeElection",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  
-  // View Functions
-  {
-    "inputs": [],
-    "name": "getElectionInfo",
-    "outputs": [
-      {"name": "title", "type": "string"},
-      {"name": "description", "type": "string"},
-      {"name": "startTime", "type": "uint256"},
-      {"name": "endTime", "type": "uint256"},
-      {"name": "registrationDeadline", "type": "uint256"},
-      {"name": "isActive", "type": "bool"},
-      {"name": "isFinalized", "type": "bool"},
-      {"name": "totalVoters", "type": "uint256"},
-      {"name": "totalVotes", "type": "uint256"},
-      {"name": "winnerID", "type": "uint256"}
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  
-  {
-    "inputs": [],
-    "name": "getAllCandidates",
-    "outputs": [
-      {"name": "candidateIDs", "type": "uint256[]"},
-      {"name": "names", "type": "string[]"},
-      {"name": "parties", "type": "string[]"},
-      {"name": "voteCounts", "type": "uint256[]"},
-      {"name": "isActiveArray", "type": "bool[]"}
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  
-  {
-    "inputs": [{"name": "_voterAddress", "type": "address"}],
-    "name": "getVoterInfo",
-    "outputs": [
-      {"name": "isRegistered", "type": "bool"},
-      {"name": "hasVoted", "type": "bool"},
-      {"name": "candidateVoted", "type": "uint256"},
-      {"name": "voterID", "type": "uint256"},
-      {"name": "registrationTime", "type": "uint256"}
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  
-  {
-    "inputs": [],
-    "name": "getCurrentWinner",
-    "outputs": [
-      {"name": "winnerID", "type": "uint256"},
-      {"name": "winnerName", "type": "string"},
-      {"name": "winnerParty", "type": "string"},
-      {"name": "maxVotes", "type": "uint256"},
-      {"name": "isTie", "type": "bool"}
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  
-  {
-    "inputs": [],
-    "name": "getElectionStatistics",
-    "outputs": [
-      {"name": "totalRegisteredVoters", "type": "uint256"},
-      {"name": "totalVotesCast", "type": "uint256"},
-      {"name": "voterTurnoutPercentage", "type": "uint256"},
-      {"name": "activeCandidates", "type": "uint256"},
-      {"name": "totalCandidatesCount", "type": "uint256"},
-      {"name": "hasWinner", "type": "bool"},
-      {"name": "electionComplete", "type": "bool"}
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  
-  {
-    "inputs": [{"name": "_user", "type": "address"}],
-    "name": "getUserInfo",
-    "outputs": [
-      {"name": "role", "type": "uint8"},
-      {"name": "isActive", "type": "bool"},
-      {"name": "assignedAt", "type": "uint256"},
-      {"name": "assignedBy", "type": "address"}
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  
-  // Events
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true, "name": "voter", "type": "address"},
-      {"indexed": true, "name": "candidateID", "type": "uint256"},
-      {"indexed": false, "name": "timestamp", "type": "uint256"},
-      {"indexed": false, "name": "voteRecordID", "type": "uint256"}
-    ],
-    "name": "VoteCast",
-    "type": "event"
-  },
-  
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true, "name": "voter", "type": "address"},
-      {"indexed": true, "name": "voterID", "type": "uint256"},
-      {"indexed": false, "name": "timestamp", "type": "uint256"}
-    ],
-    "name": "VoterRegistered",
-    "type": "event"
-  },
-  
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true, "name": "candidateID", "type": "uint256"},
-      {"indexed": false, "name": "name", "type": "string"},
-      {"indexed": false, "name": "party", "type": "string"},
-      {"indexed": true, "name": "addedBy", "type": "address"}
-    ],
-    "name": "CandidateAdded",
-    "type": "event"
-  }
-];
+const ELECTRA_ABI = Electra.abi || Electra.abi; // Fallback for ABI import
 
 // ==================== CONTRACT MANAGEMENT ====================
 
@@ -290,7 +87,7 @@ class ContractManager {
   getContractAddress() {
     // Priority order: environment variable, localStorage, default
     return (
-      process.env.REACT_APP_CONTRACT_ADDRESS ||
+      process.env.VITE_CONTRACT_ADDRESS ||
       localStorage.getItem('electra_contract_address') ||
       '0x1234567890123456789012345678901234567890' // Placeholder
     );

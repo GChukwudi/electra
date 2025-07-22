@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-/**
- * @title ElectraAccessControl
- * @dev Access control and security management for the Electra voting system
- * @author God's Favour Chukwudi
- */
 contract ElectraAccessControl {
     
     // ==================== ENUMS ====================

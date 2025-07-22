@@ -78,7 +78,7 @@ export const useWeb3 = (options = {}) => {
   const config = {
     autoConnect: true,
     supportedChainIds: [1, 11155111, 137, 80001, 1337, 5777],
-    preferredChainId: parseInt(process.env.REACT_APP_CHAIN_ID) || 11155111,
+    preferredChainId: parseInt(process.env.VITE_NETWORK_ID) || 11155111,
     enableBalancePolling: true,
     balancePollingInterval: 30000,
     enableNetworkDetection: true,
