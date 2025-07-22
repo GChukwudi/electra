@@ -3,14 +3,6 @@ pragma solidity ^0.8.19;
 
 import "./ElectraAccessControl.sol";
 
-/**
- * @title Electra
- * @dev Main voting contract for the Electra blockchain voting system
- * @author God's Favour Chukwudi
- * 
- * Electra is a secure, transparent, and immutable voting system designed
- * to address electoral integrity challenges in Nigeria and beyond.
- */
 contract Electra is ElectraAccessControl {
     
     // ==================== STRUCTS ====================
@@ -95,7 +87,6 @@ contract Electra is ElectraAccessControl {
     
     // ==================== EVENTS ====================
     
-    // FIXED: Removed 'indexed' from string parameters to prevent hash encoding
     event ElectionCreated(
         string title,
         uint256 startTime,
@@ -179,15 +170,11 @@ contract Electra is ElectraAccessControl {
         require(candidates[_candidateID].isActive, "Candidate is not active");
         _;
     }
-    
-    // ==================== CONSTRUCTOR ====================
-    
+
     constructor() ElectraAccessControl() {
         nextVoterID = 1;
         nextVoteRecord = 1;
     }
-    
-    // ==================== ELECTION MANAGEMENT ====================
     
     /**
      * @dev Create a new election
@@ -502,10 +489,7 @@ contract Electra is ElectraAccessControl {
         
         emit VotingExtended(currentElection.endTime, extension);
     }
-    
-    /**
-     * @dev Emergency reset election (only in emergency mode)
-     */
+
     function emergencyResetElection() 
         external 
         onlyOwner 

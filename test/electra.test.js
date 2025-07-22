@@ -1,8 +1,3 @@
-/**
- * Electra Core Functionality Tests
- * Tests the main voting contract functionality
- */
-
 const Electra = artifacts.require("Electra");
 const { expect } = require("chai");
 const { time } = require("@openzeppelin/test-helpers");
@@ -11,7 +6,7 @@ contract("Electra", function (accounts) {
   let electra;
   const [owner, admin, voter1, voter2, voter3, voter4, voter5] = accounts;
   
-  const electionTitle = "Test Election 2024";
+  const electionTitle = "Test Election 2025";
   const electionDescription = "Test election for POC";
   
   beforeEach(async function () {
@@ -170,18 +165,18 @@ contract("Electra", function (accounts) {
     });
     
     it("Should add multiple candidates", async function () {
-      await electra.addCandidate("Candidate 1", "Party 1", "Manifesto 1", { from: owner });
-      await electra.addCandidate("Candidate 2", "Party 2", "Manifesto 2", { from: owner });
-      await electra.addCandidate("Candidate 3", "Party 3", "Manifesto 3", { from: owner });
+      await electra.addCandidate("Ahmed Bonuola", "APC", "To promote economic growth, education reform, and healthcare improvement.", { from: owner });
+      await electra.addCandidate("Christopher Ejiofor", "PDP", "Lorem Ipsum Lorem Ipsum Lorem Ipsum", { from: owner });
+      await electra.addCandidate("Emenim Pius", "LP", "Lorem Ipsum Lorem Ipsum Lorem Ipsum", { from: owner });
       
       const totalCandidates = await electra.totalCandidates();
       expect(totalCandidates.toNumber()).to.equal(3);
       
       const allCandidates = await electra.getAllCandidates();
       expect(allCandidates.names.length).to.equal(3);
-      expect(allCandidates.names[0]).to.equal("Candidate 1");
-      expect(allCandidates.names[1]).to.equal("Candidate 2");
-      expect(allCandidates.names[2]).to.equal("Candidate 3");
+      expect(allCandidates.names[0]).to.equal("Ahmed Bonuola");
+      expect(allCandidates.names[1]).to.equal("Christopher Ejiofor");
+      expect(allCandidates.names[2]).to.equal("Emenim Pius");
     });
     
     it("Should not allow empty candidate name", async function () {

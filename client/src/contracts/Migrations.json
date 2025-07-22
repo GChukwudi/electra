@@ -1083,6 +1083,12 @@
     "version": "0.8.19+commit.7dd6d404.Emscripten.clang"
   },
   "networks": {
+    "11155111": {
+      "events": {},
+      "links": {},
+      "address": "0xDD572D79Ad6a7490AC2C0175Da3d459f34FC9774",
+      "transactionHash": "0x8d895b4ddb90a4f91d3f4208a6bc34fa4d577331f24d41b0783add1629ed692c"
+    },
     "1752920285441": {
       "events": {},
       "links": {},
@@ -1091,7 +1097,7 @@
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-07-19T10:41:36.467Z",
+  "updatedAt": "2025-07-22T11:41:31.371Z",
   "networkType": "ethereum",
   "devdoc": {
     "details": "Standard Truffle migrations contract",
