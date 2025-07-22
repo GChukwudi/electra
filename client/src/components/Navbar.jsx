@@ -98,8 +98,8 @@ const Navbar = () => {
       position: 'relative'
     },
     activeLink: {
-      color: '#2563eb',
-      borderBottom: '2px solid #2563eb',
+      color: '#ea580c',
+      borderBottom: '2px solid #ea580c',
       paddingBottom: '0.25rem'
     },
     inactiveLink: {

@@ -45,20 +45,7 @@ function App() {
                   textAlign: 'center', 
                   color: '#6b7280' 
                 }}>
-                  <div style={{ marginBottom: '1rem' }}>
-                    <h3 style={{ 
-                      fontSize: '1.125rem', 
-                      fontWeight: '600', 
-                      color: '#1f2937', 
-                      marginBottom: '0.5rem' 
-                    }}>
-                      Electra
-                    </h3>
-                    <p style={{ fontSize: '0.875rem' }}>
-                      Secure, Transparent, Democratic - Blockchain-powered voting for the future
-                    </p>
-                  </div>
-                  
+
                   <div style={{ 
                     display: 'grid', 
                     gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
@@ -108,14 +95,7 @@ function App() {
                     paddingTop: '1rem' 
                   }}>
                     <p style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-                      © 2024 Electra - Proof of Concept | Built for Nigerian Electoral Reform | Powered by Ethereum Blockchain
-                    </p>
-                    <p style={{ 
-                      fontSize: '0.75rem', 
-                      color: '#9ca3af', 
-                      marginTop: '0.25rem' 
-                    }}>
-                      Created by God's Favour Chukwudi
+                      &copy; {new Date().getFullYear()} Electra. All rights reserved.
                     </p>
                   </div>
                 </div>

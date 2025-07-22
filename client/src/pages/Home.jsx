@@ -596,50 +596,141 @@ const Home = () => {
       )}
 
       {/* About Electra */}
-      <div style={styles.card}>
-        <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#111827', marginBottom: '1rem' }}>
+      <div style={{
+        background: 'linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%)',
+        border: '2px solid #e5e7eb',
+        borderRadius: '20px',
+        padding: '3rem',
+        boxShadow: '0 15px 35px rgba(0, 0, 0, 0.1), 0 5px 15px rgba(0, 0, 0, 0.08)',
+        position: 'relative'
+      }}>
+        <h3 style={{ 
+          fontSize: '1.5rem', 
+          fontWeight: '900', 
+          color: '#000000', 
+          marginBottom: '2rem',
+          textAlign: 'center',
+          letterSpacing: '-0.02em'
+        }}>
           About Electra
         </h3>
-        <div style={styles.aboutGrid}>
-          <div style={styles.aboutItem}>
-            <div style={styles.aboutIcon}>🔒</div>
-            <h4 style={styles.aboutTitle}>Secure</h4>
-            <p style={styles.aboutDescription}>
-              Cryptographic protection ensures vote integrity and prevents tampering
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+          gap: '2rem',
+          marginBottom: '2rem'
+        }}>
+          <div style={{
+            padding: '2rem',
+            border: '2px solid #e5e7ca',
+            borderRadius: '16px',
+            textAlign: 'center',
+            transition: 'transform 0.3s ease',
+            cursor: 'pointer'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-8px)'}
+          onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+          >
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
+            <h4 style={{ 
+              fontSize: '1.25rem', 
+              fontWeight: '700', 
+              color: '#000000', 
+              marginBottom: '1rem' 
+            }}>
+              Secure
+            </h4>
+            <p style={{ 
+              fontSize: '0.95rem', 
+              color: '#000000', 
+              lineHeight: '1.6',
+              margin: 0
+            }}>
+              Cryptographic protection to ensure vote integrity and prevents tampering
             </p>
           </div>
           
-          <div style={styles.aboutItem}>
-            <div style={styles.aboutIcon}>👁️</div>
-            <h4 style={styles.aboutTitle}>Transparent</h4>
-            <p style={styles.aboutDescription}>
+          <div style={{
+            background: '#fff',
+            color: '#000',
+            padding: '2rem',
+            borderRadius: '16px',
+            border: '2px solid #e5e7ca',
+            textAlign: 'center',
+            transition: 'transform 0.3s ease',
+            cursor: 'pointer'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-8px)'}
+          onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+          >
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>👁️</div>
+            <h4 style={{ 
+              fontSize: '1.25rem', 
+              fontWeight: '700', 
+              color: '#000', 
+              marginBottom: '1rem' 
+            }}>
+              Transparent
+            </h4>
+            <p style={{ 
+              fontSize: '0.95rem', 
+              color: '#333', 
+              lineHeight: '1.6',
+              margin: 0
+            }}>
               All votes are publicly verifiable on the blockchain
             </p>
           </div>
           
-          <div style={styles.aboutItem}>
-            <div style={styles.aboutIcon}>🗳️</div>
-            <h4 style={styles.aboutTitle}>Democratic</h4>
-            <p style={styles.aboutDescription}>
+          <div style={{
+            padding: '2rem',
+            borderRadius: '16px',
+            border: '2px solid #e5e7ca',
+            textAlign: 'center',
+            transition: 'transform 0.3s ease',
+            cursor: 'pointer'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-8px)'}
+          onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+          >
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🗳️</div>
+            <h4 style={{ 
+              fontSize: '1.25rem', 
+              fontWeight: '700', 
+              color: '#000000', 
+              marginBottom: '1rem' 
+            }}>
+              Democratic
+            </h4>
+            <p style={{ 
+              fontSize: '0.95rem', 
+              color: '#000000', 
+              lineHeight: '1.6',
+              margin: 0
+            }}>
               Empowering citizens with trustworthy electoral processes
             </p>
           </div>
         </div>
         
         <div style={{ 
-          marginTop: '1.5rem', 
-          padding: '1rem', 
-          backgroundColor: '#f9fafb', 
-          borderRadius: '0.5rem' 
+          marginTop: '2rem', 
+          padding: '2rem', 
+          background: 'linear-gradient(145deg, #e5e7ca 0%, #e9ecef 100%)',
+          border: '1px solid #dee2e6',
+          borderRadius: '16px'
         }}>
-          <p style={{ fontSize: '0.875rem', color: '#4b5563', textAlign: 'center' }}>
-            <strong>Proof of Concept:</strong> This is a demonstration of blockchain voting technology 
-            designed to address electoral integrity challenges in Nigeria and beyond.
+          <p style={{ 
+            fontSize: '1rem', 
+            color: '#000', 
+            textAlign: 'center',
+            lineHeight: '1.7',
+            margin: 0
+          }}>
+            Designed to address electoral integrity challenges in Nigeria and beyond.
           </p>
         </div>
       </div>
-
-      {/* Spinner animation keyframes */}
       <style>
         {`
           @keyframes spin {
