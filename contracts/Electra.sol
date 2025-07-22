@@ -1,11 +1,32 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "./ElectraAccessControl.sol";
-
-contract Electra is ElectraAccessControl {
+contract Electra {
     
-    // ==================== STRUCTS ====================
+    // ==================== ACCESS CONTROL ENUMS & STRUCTS ====================
+    
+    /**
+     * @dev User roles in the Electra system
+     */
+    enum Role {
+        NONE,           // No role assigned
+        VOTER,          // Can register and vote
+        OBSERVER,       // Can view results only
+        ADMIN,          // Can manage candidates and view stats
+        COMMISSIONER    // Full system control
+    }
+    
+    /**
+     * @dev User information structure
+     */
+    struct User {
+        Role role;
+        bool isActive;
+        uint256 assignedAt;
+        address assignedBy;
+    }
+    
+    // ==================== VOTING STRUCTS ====================
     
     /**
      * @dev Voter information structure
@@ -60,6 +81,20 @@ contract Electra is ElectraAccessControl {
     
     // ==================== STATE VARIABLES ====================
     
+    // Access Control
+    mapping(address => User) public users;
+    address public systemOwner;
+    address public currentCommissioner;
+    
+    // Role counters
+    uint256 public totalAdmins;
+    uint256 public totalVoters;
+    uint256 public totalObservers;
+    
+    // Emergency controls
+    bool public systemPaused = false;
+    bool public emergencyMode = false;
+    
     // Core election data
     Election public currentElection;
     mapping(address => Voter) public voters;
@@ -87,6 +122,16 @@ contract Electra is ElectraAccessControl {
     
     // ==================== EVENTS ====================
     
+    // Access Control Events
+    event RoleAssigned(address indexed user, Role indexed role, address indexed assignedBy);
+    event RoleRevoked(address indexed user, Role indexed oldRole, address indexed revokedBy);
+    event CommissionerChanged(address indexed oldCommissioner, address indexed newCommissioner);
+    event SystemPaused(address indexed pausedBy);
+    event SystemUnpaused(address indexed unpausedBy);
+    event EmergencyActivated(address indexed activatedBy);
+    event EmergencyDeactivated(address indexed deactivatedBy);
+    
+    // Election Events
     event ElectionCreated(
         string title,
         uint256 startTime,
@@ -100,7 +145,6 @@ contract Electra is ElectraAccessControl {
         uint256 timestamp
     );
     
-    // FIXED: Removed 'indexed' from string parameters
     event CandidateAdded(
         uint256 indexed candidateID,
         string name,
@@ -127,6 +171,69 @@ contract Electra is ElectraAccessControl {
     
     // ==================== MODIFIERS ====================
     
+    // Access Control Modifiers
+    modifier onlyOwner() {
+        require(msg.sender == systemOwner, "Only system owner can perform this action");
+        _;
+    }
+    
+    modifier onlyCommissioner() {
+        require(msg.sender == currentCommissioner, "Only commissioner can perform this action");
+        _;
+    }
+    
+    modifier onlyCommissionerOrOwner() {
+        require(
+            msg.sender == currentCommissioner || msg.sender == systemOwner,
+            "Only commissioner or owner can perform this action"
+        );
+        _;
+    }
+    
+    modifier onlyAdmin() {
+        require(
+            users[msg.sender].role == Role.ADMIN || 
+            users[msg.sender].role == Role.COMMISSIONER ||
+            msg.sender == systemOwner,
+            "Admin access required"
+        );
+        _;
+    }
+    
+    modifier hasRole(Role _role) {
+        require(users[msg.sender].role == _role, "Insufficient role permissions");
+        _;
+    }
+    
+    modifier hasAnyRole(Role _role1, Role _role2) {
+        require(
+            users[msg.sender].role == _role1 || users[msg.sender].role == _role2,
+            "Insufficient role permissions"
+        );
+        _;
+    }
+    
+    modifier whenNotPaused() {
+        require(!systemPaused, "System is currently paused");
+        _;
+    }
+    
+    modifier whenPaused() {
+        require(systemPaused, "System is not paused");
+        _;
+    }
+    
+    modifier whenNotEmergency() {
+        require(!emergencyMode, "System is in emergency mode");
+        _;
+    }
+    
+    modifier onlyActiveUser() {
+        require(users[msg.sender].isActive, "User account is not active");
+        _;
+    }
+    
+    // Election Modifiers
     modifier registrationIsOpen() {
         require(registrationOpen, "Voter registration is not open");
         require(
@@ -171,10 +278,203 @@ contract Electra is ElectraAccessControl {
         _;
     }
 
-    constructor() ElectraAccessControl() {
+    // ==================== CONSTRUCTOR ====================
+
+    constructor() {
+        systemOwner = msg.sender;
+        currentCommissioner = msg.sender;
+        
+        // Assign owner as commissioner
+        users[msg.sender] = User({
+            role: Role.COMMISSIONER,
+            isActive: true,
+            assignedAt: block.timestamp,
+            assignedBy: msg.sender
+        });
+        
         nextVoterID = 1;
         nextVoteRecord = 1;
+        
+        emit RoleAssigned(msg.sender, Role.COMMISSIONER, msg.sender);
     }
+    
+    // ==================== ACCESS CONTROL FUNCTIONS ====================
+    
+    /**
+     * @dev Assign a role to a user
+     * @param _user Address of the user
+     * @param _role Role to assign
+     */
+    function assignRole(address _user, Role _role) 
+        external 
+        onlyCommissionerOrOwner 
+        whenNotPaused 
+    {
+        require(_user != address(0), "Invalid user address");
+        require(_role != Role.NONE, "Cannot assign NONE role");
+        require(_user != systemOwner || _role == Role.COMMISSIONER, "Owner must be commissioner");
+        
+        // Special handling for commissioner role
+        if (_role == Role.COMMISSIONER) {
+            require(msg.sender == systemOwner, "Only owner can assign commissioner role");
+            require(_user != currentCommissioner, "User is already commissioner");
+        }
+        
+        Role oldRole = users[_user].role;
+        
+        // Update role counters
+        _updateRoleCounters(oldRole, _role, true);
+        
+        // Assign new role
+        users[_user] = User({
+            role: _role,
+            isActive: true,
+            assignedAt: block.timestamp,
+            assignedBy: msg.sender
+        });
+        
+        // Handle commissioner change
+        if (_role == Role.COMMISSIONER && _user != currentCommissioner) {
+            address oldCommissioner = currentCommissioner;
+            currentCommissioner = _user;
+            emit CommissionerChanged(oldCommissioner, _user);
+        }
+        
+        emit RoleAssigned(_user, _role, msg.sender);
+    }
+    
+    /**
+     * @dev Revoke a user's role
+     * @param _user Address of the user
+     */
+    function revokeRole(address _user) 
+        external 
+        onlyCommissionerOrOwner 
+        whenNotPaused 
+    {
+        require(_user != address(0), "Invalid user address");
+        require(_user != systemOwner, "Cannot revoke owner's role");
+        require(_user != currentCommissioner, "Cannot revoke commissioner's role");
+        require(users[_user].role != Role.NONE, "User has no role to revoke");
+        
+        Role oldRole = users[_user].role;
+        
+        // Update role counters
+        _updateRoleCounters(oldRole, Role.NONE, false);
+        
+        // Revoke role
+        users[_user] = User({
+            role: Role.NONE,
+            isActive: false,
+            assignedAt: 0,
+            assignedBy: address(0)
+        });
+        
+        emit RoleRevoked(_user, oldRole, msg.sender);
+    }
+    
+    /**
+     * @dev Deactivate a user without changing their role
+     * @param _user Address of the user
+     */
+    function deactivateUser(address _user) 
+        external 
+        onlyCommissionerOrOwner 
+        whenNotPaused 
+    {
+        require(_user != address(0), "Invalid user address");
+        require(_user != systemOwner, "Cannot deactivate owner");
+        require(_user != currentCommissioner, "Cannot deactivate commissioner");
+        require(users[_user].isActive, "User is already inactive");
+        
+        users[_user].isActive = false;
+    }
+    
+    /**
+     * @dev Reactivate a user
+     * @param _user Address of the user
+     */
+    function reactivateUser(address _user) 
+        external 
+        onlyCommissionerOrOwner 
+        whenNotPaused 
+    {
+        require(_user != address(0), "Invalid user address");
+        require(!users[_user].isActive, "User is already active");
+        require(users[_user].role != Role.NONE, "User has no role assigned");
+        
+        users[_user].isActive = true;
+    }
+    
+    /**
+     * @dev Pause the entire system
+     */
+    function pauseSystem() external onlyCommissionerOrOwner {
+        require(!systemPaused, "System is already paused");
+        systemPaused = true;
+        emit SystemPaused(msg.sender);
+    }
+    
+    /**
+     * @dev Unpause the system
+     */
+    function unpauseSystem() external onlyCommissionerOrOwner {
+        require(systemPaused, "System is not paused");
+        systemPaused = false;
+        emit SystemUnpaused(msg.sender);
+    }
+    
+    /**
+     * @dev Activate emergency mode
+     */
+    function activateEmergency() external onlyCommissionerOrOwner {
+        require(!emergencyMode, "Emergency mode is already active");
+        emergencyMode = true;
+        systemPaused = true; // Auto-pause system in emergency
+        emit EmergencyActivated(msg.sender);
+    }
+    
+    /**
+     * @dev Deactivate emergency mode
+     */
+    function deactivateEmergency() external onlyOwner {
+        require(emergencyMode, "Emergency mode is not active");
+        emergencyMode = false;
+        emit EmergencyDeactivated(msg.sender);
+    }
+    
+    /**
+     * @dev Transfer system ownership (emergency only)
+     * @param _newOwner Address of the new owner
+     */
+    function transferOwnership(address _newOwner) external onlyOwner {
+        require(_newOwner != address(0), "Invalid new owner address");
+        require(_newOwner != systemOwner, "New owner is the same as current owner");
+        
+        address oldOwner = systemOwner;
+        systemOwner = _newOwner;
+        
+        // Update new owner's role
+        users[_newOwner] = User({
+            role: Role.COMMISSIONER,
+            isActive: true,
+            assignedAt: block.timestamp,
+            assignedBy: oldOwner
+        });
+        
+        // Update old owner's role
+        users[oldOwner] = User({
+            role: Role.ADMIN,
+            isActive: true,
+            assignedAt: block.timestamp,
+            assignedBy: _newOwner
+        });
+        
+        currentCommissioner = _newOwner;
+        emit CommissionerChanged(oldOwner, _newOwner);
+    }
+    
+    // ==================== ELECTION MANAGEMENT ====================
     
     /**
      * @dev Create a new election
@@ -227,7 +527,6 @@ contract Electra is ElectraAccessControl {
     
     /**
      * @dev Start the voting period manually (before scheduled time)
-     * FIXED: Allow commissioner to override registration deadline for testing
      */
     function startVoting() 
         external 
@@ -238,9 +537,6 @@ contract Electra is ElectraAccessControl {
         require(currentElection.isActive, "No active election");
         require(!votingOpen, "Voting is already open");
         require(totalCandidates >= 2, "Need at least 2 candidates to start voting");
-        
-        // FIXED: Allow commissioner to start voting even before registration deadline
-        // This is useful for testing and emergency situations
         
         registrationOpen = false;
         votingOpen = true;
@@ -403,9 +699,6 @@ contract Electra is ElectraAccessControl {
         require(!voters[msg.sender].isRegistered, "You are already registered");
         require(currentElection.isActive, "No active election");
         
-        // For POC, allow self-registration
-        // In production, this would require additional verification
-        
         bytes32 verificationHash = keccak256(
             abi.encodePacked(msg.sender, nextVoterID, block.timestamp)
         );
@@ -509,6 +802,69 @@ contract Electra is ElectraAccessControl {
     
     // ==================== VIEW FUNCTIONS ====================
     
+    /**
+     * @dev Check if a user has a specific role
+     * @param _user Address of the user
+     * @param _role Role to check
+     * @return Whether the user has the role
+     */
+    function checkRole(address _user, Role _role) external view returns (bool) {
+        return users[_user].role == _role && users[_user].isActive;
+    }
+    
+    /**
+     * @dev Check if a user has any of the specified roles
+     * @param _user Address of the user
+     * @param _roles Array of roles to check
+     * @return Whether the user has any of the roles
+     */
+    function onlyAnyRole(address _user, Role[] memory _roles) external view returns (bool) {
+        if (!users[_user].isActive) return false;
+        
+        Role userRole = users[_user].role;
+        for (uint i = 0; i < _roles.length; i++) {
+            if (userRole == _roles[i]) return true;
+        }
+        return false;
+    }
+    
+    function getUserInfo(address _user) 
+        external 
+        view 
+        returns (Role role, bool isActive, uint256 assignedAt, address assignedBy) 
+    {
+        User memory user = users[_user];
+        return (user.role, user.isActive, user.assignedAt, user.assignedBy);
+    }
+    
+    function getSystemStats() 
+        external 
+        view 
+        returns (
+            uint256 admins,
+            uint256 votersCount,
+            uint256 observers,
+            bool paused,
+            bool emergency,
+            address owner,
+            address commissioner
+        ) 
+    {
+        return (
+            totalAdmins,
+            totalVoters,
+            totalObservers,
+            systemPaused,
+            emergencyMode,
+            systemOwner,
+            currentCommissioner
+        );
+    }
+    
+    function isSystemOperational() external view returns (bool) {
+        return !systemPaused && !emergencyMode;
+    }
+    
     function getVoterInfo(address _voterAddress) 
         external 
         view 
@@ -591,7 +947,7 @@ contract Electra is ElectraAccessControl {
             uint256 registrationDeadline,
             bool isActive,
             bool isFinalized,
-            uint256 totalVoters,
+            uint256 totalVotersCount,
             uint256 totalVotes,
             uint256 winnerID
         ) 
@@ -715,6 +1071,26 @@ contract Electra is ElectraAccessControl {
     }
     
     // ==================== INTERNAL FUNCTIONS ====================
+    
+    /**
+     * @dev Update role counters when roles change
+     * @param _oldRole Previous role
+     * @param _newRole New role
+     * @param _isAssignment Whether this is an assignment (true) or revocation (false)
+     */
+    function _updateRoleCounters(Role _oldRole, Role _newRole, bool _isAssignment) internal {
+        // Decrease old role counter
+        if (_oldRole == Role.ADMIN) totalAdmins--;
+        else if (_oldRole == Role.VOTER) totalVoters--;
+        else if (_oldRole == Role.OBSERVER) totalObservers--;
+        
+        // Increase new role counter (only for assignments)
+        if (_isAssignment) {
+            if (_newRole == Role.ADMIN) totalAdmins++;
+            else if (_newRole == Role.VOTER) totalVoters++;
+            else if (_newRole == Role.OBSERVER) totalObservers++;
+        }
+    }
     
     /**
      * @dev Calculate the winner of the election
