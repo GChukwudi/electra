@@ -12,8 +12,6 @@ const CONFIG = {
   EVENT_POLLING_INTERVAL: 5000
 };
 
-// ==================== CACHE MANAGEMENT ====================
-
 class ContractCache {
   constructor(ttl = CONFIG.CACHE_TTL) {
     this.cache = new Map();
@@ -54,10 +52,6 @@ class ContractCache {
 
 const contractCache = new ContractCache();
 
-// ==================== ABI MANAGEMENT ====================
-
-// In production, this should be imported from compiled contract artifacts
-// Example: import ElectraABI from '../contracts/Electra.json';
 const ELECTRA_ABI = [
   // Core Functions
   {
