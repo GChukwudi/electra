@@ -1086,8 +1086,8 @@
     "11155111": {
       "events": {},
       "links": {},
-      "address": "0xDD572D79Ad6a7490AC2C0175Da3d459f34FC9774",
-      "transactionHash": "0x8d895b4ddb90a4f91d3f4208a6bc34fa4d577331f24d41b0783add1629ed692c"
+      "address": "0xA3AA07826687c0F50a5F5Ea96C44624ea31Fd7B0",
+      "transactionHash": "0x77f4a849baa779d5f37ed83959790202763a2970fb7ff5647276f59fbd2e501d"
     },
     "1752920285441": {
       "events": {},
@@ -1097,7 +1097,7 @@
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-07-22T11:41:31.371Z",
+  "updatedAt": "2025-07-24T09:20:36.682Z",
   "networkType": "ethereum",
   "devdoc": {
     "details": "Standard Truffle migrations contract",
