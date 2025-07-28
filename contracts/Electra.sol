@@ -156,13 +156,33 @@ contract Electra {
         currentCommissioner = msg.sender;
         
         users[msg.sender] = User({
-            role: Role.COMMISSIONER,
+            role: Role.ADMIN,
             isActive: true,
             assignedAt: uint32(block.timestamp),
             assignedBy: msg.sender
         });
         
+        emit RoleAssigned(msg.sender, Role.ADMIN, msg.sender);
+
+        users[msg.sender] = User({
+            role: Role.COMMISSIONER,
+            isActive: true,
+            assignedAt: uint32(block.timestamp),
+            assignedBy: msg.sender
+        });
+
         emit RoleAssigned(msg.sender, Role.COMMISSIONER, msg.sender);
+    }
+
+    function setOwnerAsAdmin() external onlyOwner {
+        users[systemOwner] = User({
+            role: Role.ADMIN,
+            isActive: true,
+            assignedAt: uint32(block.timestamp),
+            assignedBy: systemOwner
+        });
+        
+        emit RoleAssigned(systemOwner, Role.ADMIN, systemOwner);
     }
         
     function assignRole(address _user, Role _role) 

@@ -70,7 +70,8 @@ const ElectionOverview = ({ electionInfo, electionStatus, candidates, systemInfo
   const getSystemStatusInfo = () => {
     const statusItems = [];
     
-    if (systemInfo.paused) {
+    // Add null check for systemInfo
+    if (systemInfo && systemInfo.paused) {
       statusItems.push(
         <span key="paused" style={{
           ...statusBadgeStyle,

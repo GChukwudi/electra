@@ -56,7 +56,7 @@ export const useContract = (provider, account) => {
     }
   }, [contract]);
 
-  // Generic read-only contract call
+  // Generic read-only contract call with better error handling
   const readContract = useCallback(async (method, args = []) => {
     const contractToUse = readOnlyContract || contract;
     
@@ -69,9 +69,38 @@ export const useContract = (provider, account) => {
       return result;
     } catch (error) {
       console.error(`Error reading ${method}:`, error);
+      
+      // Handle specific contract revert cases
+      if (error.message && error.message.includes('No candidates')) {
+        throw new Error('NO_CANDIDATES');
+      }
+      if (error.message && error.message.includes('Invalid candidate')) {
+        throw new Error('INVALID_CANDIDATE');
+      }
+      if (error.message && error.message.includes('No active election')) {
+        throw new Error('NO_ACTIVE_ELECTION');
+      }
+      
       throw new Error(parseContractError(error));
     }
   }, [contract, readOnlyContract]);
+
+  // Safe read function that doesn't throw for expected reverts
+  const safeReadContract = useCallback(async (method, args = [], defaultValue = null) => {
+    try {
+      return await readContract(method, args);
+    } catch (error) {
+      // Log the error but return default value for expected contract reverts
+      if (error.message === 'NO_CANDIDATES' || 
+          error.message === 'INVALID_CANDIDATE' || 
+          error.message === 'NO_ACTIVE_ELECTION') {
+        console.warn(`Expected revert for ${method}:`, error.message);
+        return defaultValue;
+      }
+      // Re-throw unexpected errors
+      throw error;
+    }
+  }, [readContract]);
 
   // Self register voter
   const selfRegister = useCallback(async () => {
@@ -147,9 +176,10 @@ export const useContract = (provider, account) => {
     return await readContract('getVoterInfo', [address]);
   }, [readContract]);
 
+  // Safe getCurrentWinner that handles "No candidates" revert
   const getCurrentWinner = useCallback(async () => {
-    return await readContract('getCurrentWinner');
-  }, [readContract]);
+    return await safeReadContract('getCurrentWinner', [], null);
+  }, [safeReadContract]);
 
   const getTotalCandidates = useCallback(async () => {
     return await readContract('totalCandidates');
@@ -183,6 +213,11 @@ export const useContract = (provider, account) => {
     return await readContract('votingOpen');
   }, [readContract]);
 
+  // Set owner as admin (owner only)
+  const setOwnerAsAdmin = useCallback(async () => {
+    return await callContract('setOwnerAsAdmin');
+  }, [callContract]);
+
   // Estimate gas for operations
   const estimateGasForOperation = useCallback(async (method, args = []) => {
     if (!contract) return null;
@@ -213,6 +248,7 @@ export const useContract = (provider, account) => {
     assignRole,
     revokeRole,
     pauseSystem,
+    setOwnerAsAdmin,
 
     // Read functions
     getElectionInfo,
@@ -232,6 +268,7 @@ export const useContract = (provider, account) => {
     // Utilities
     callContract,
     readContract,
+    safeReadContract,
     estimateGasForOperation
   };
 };

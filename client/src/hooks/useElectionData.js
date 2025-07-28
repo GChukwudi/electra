@@ -12,8 +12,10 @@ const safeToNumber = (value) => {
   return Number(value);
 };
 
-export const useElectionData = () => {
-  const { contract: contractHook, account, isConnected, connectWallet } = useContract();
+export const useElectionData = (contractHook, account) => {
+  // Use the passed contract and account instead of useContract hook
+  const contract = contractHook;
+  const userAccount = account;
   
   // State for election data
   const [electionInfo, setElectionInfo] = useState(null);
@@ -21,11 +23,13 @@ export const useElectionData = () => {
   const [candidates, setCandidates] = useState([]);
   const [voterInfo, setVoterInfo] = useState(null);
   const [userRole, setUserRole] = useState(null);
+  const [systemInfo, setSystemInfo] = useState(null);
+  const [currentWinner, setCurrentWinner] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const loadData = async () => {
-    if (!contractHook || !isConnected) {
+    if (!contract || !userAccount || !contract.isContractReady) {
       setLoading(false);
       return;
     }
@@ -40,10 +44,13 @@ export const useElectionData = () => {
         loadElectionStatus(),
         loadCandidates(),
         loadVoterInfo(),
-        loadUserRole()
+        loadUserRole(),
+        loadSystemInfo(),
+        loadCurrentWinner()
       ]);
 
     } catch (err) {
+      console.error('Error loading data:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -52,10 +59,10 @@ export const useElectionData = () => {
 
   // Load election info
   const loadElectionInfo = async () => {
-    if (!contractHook) return;
+    if (!contract || !contract.isContractReady) return;
     
     try {
-      const election = await contractHook.getElectionInfo();
+      const election = await contract.getElectionInfo();
       setElectionInfo({
         title: election.title,
         startTime: safeToNumber(election.startTime),
@@ -74,15 +81,15 @@ export const useElectionData = () => {
 
   // Load election status
   const loadElectionStatus = async () => {
-    if (!contractHook) return;
+    if (!contract || !contract.isContractReady) return;
     
     try {
-      const status = await contractHook.getElectionStatus();
+      const status = await contract.getElectionStatus();
       setElectionStatus({
-        currentPhase: safeToNumber(status.currentPhase),
+        registrationActive: status.registrationActive,
+        votingActive: status.votingActive,
         timeUntilStart: safeToNumber(status.timeUntilStart),
-        timeUntilEnd: safeToNumber(status.timeUntilEnd),
-        timeUntilRegistrationEnd: safeToNumber(status.timeUntilRegistrationEnd)
+        timeUntilEnd: safeToNumber(status.timeUntilEnd)
       });
     } catch (error) {
       console.error('Error loading election status:', error);
@@ -91,16 +98,16 @@ export const useElectionData = () => {
 
   // Load candidates
   const loadCandidates = async () => {
-    if (!contractHook) return;
+    if (!contract || !contract.isContractReady) return;
     
     try {
-      const totalCandidates = await contractHook.getTotalCandidates();
+      const totalCandidates = await contract.getTotalCandidates();
       const totalCount = safeToNumber(totalCandidates);
       
       const candidateList = [];
       for (let i = 1; i <= totalCount; i++) {
         try {
-          const candidate = await contractHook.getCandidate(i);
+          const candidate = await contract.getCandidateInfo(i);
           candidateList.push({
             id: i,
             name: candidate.name,
@@ -120,14 +127,15 @@ export const useElectionData = () => {
 
   // Load voter info
   const loadVoterInfo = async () => {
-    if (!contractHook || !account) return;
+    if (!contract || !contract.isContractReady || !userAccount) return;
     
     try {
-      const voter = await contractHook.getVoter(account);
+      const voter = await contract.getVoterInfo(userAccount);
       setVoterInfo({
         isRegistered: voter.isRegistered,
         hasVoted: voter.hasVoted,
         candidateVoted: safeToNumber(voter.candidateVoted),
+        voterID: safeToNumber(voter.voterID),
         registrationTime: safeToNumber(voter.registrationTime)
       });
     } catch (error) {
@@ -137,27 +145,129 @@ export const useElectionData = () => {
 
   // Load user role
   const loadUserRole = async () => {
-    if (!contractHook || !account) return;
+    if (!contract || !contract.isContractReady || !userAccount) return;
     
     try {
-      const role = await contractHook.getUserRole(account);
-      setUserRole({
-        isAdmin: role.isAdmin,
-        isObserver: role.isObserver,
-        assignedAt: safeToNumber(role.assignedAt),
-        assignedBy: role.assignedBy
-      });
+      const systemOwner = await contract.getSystemOwner();
+      const isOwner = systemOwner.toLowerCase() === userAccount.toLowerCase();
+     
+      const user = await contract.getUserRole(userAccount);
+      const currentRole = safeToNumber(user.role);
+      
+      // If user is owner but doesn't have admin role, try to set it
+      if (isOwner && currentRole < 3) {
+        try {
+          const tx = await contract.setOwnerAsAdmin();
+          await tx.wait();
+          console.log('Owner role set successfully');
+          // Reload user role after setting
+          const updatedUser = await contract.getUserRole(userAccount);
+          const updatedRole = safeToNumber(updatedUser.role);
+          
+          setUserRole({
+            role: updatedRole,
+            isAdmin: updatedRole >= 3,
+            isCommissioner: updatedRole === 4,
+            isObserver: updatedRole === 2,
+            isOwner: isOwner,
+            isActive: updatedUser.isActive,
+            assignedAt: safeToNumber(updatedUser.assignedAt),
+            assignedBy: updatedUser.assignedBy
+          });
+        } catch (e) {
+          console.warn('Error setting owner role:', e.message);
+          // Set role info even if we can't update it
+          setUserRole({
+            role: currentRole,
+            isAdmin: currentRole >= 3 || isOwner,
+            isCommissioner: currentRole === 4 || isOwner,
+            isObserver: currentRole === 2,
+            isOwner: isOwner,
+            isActive: user.isActive,
+            assignedAt: safeToNumber(user.assignedAt),
+            assignedBy: user.assignedBy
+          });
+        }
+      } else {
+        setUserRole({
+          role: currentRole,
+          isAdmin: currentRole >= 3,
+          isCommissioner: currentRole === 4,
+          isObserver: currentRole === 2,
+          isOwner: isOwner,
+          isActive: user.isActive,
+          assignedAt: safeToNumber(user.assignedAt),
+          assignedBy: user.assignedBy
+        });
+      }
     } catch (error) {
       console.error('Error loading user role:', error);
     }
   };
 
-  // Contract functions
-  const registerVoter = async () => {
-    if (!contractHook) throw new Error('Contract not available');
+  // Load system info
+  const loadSystemInfo = async () => {
+    if (!contract || !contract.isContractReady) return;
     
     try {
-      const tx = await contractHook.registerVoter();
+      const paused = await contract.getSystemPaused();
+      const registrationOpen = await contract.getRegistrationOpen();
+      const votingOpen = await contract.getVotingOpen();
+      
+      setSystemInfo({
+        paused: paused,
+        registrationOpen: registrationOpen,
+        votingOpen: votingOpen,
+        version: '1.0.0',
+        lastUpdated: Date.now()
+      });
+    } catch (error) {
+      console.error('Error loading system info:', error);
+      // Set default values to prevent errors
+      setSystemInfo({
+        paused: false,
+        registrationOpen: false,
+        votingOpen: false,
+        version: '1.0.0',
+        lastUpdated: Date.now()
+      });
+    }
+  };
+
+  // Load current winner
+  const loadCurrentWinner = async () => {
+    if (!contract || !contract.isContractReady) return;
+    
+    try {
+      // First check if there are any candidates
+      const totalCandidates = await contract.getTotalCandidates();
+      const totalCount = safeToNumber(totalCandidates);
+      
+      if (totalCount === 0) {
+        // No candidates yet, set winner to null
+        setCurrentWinner(null);
+        return;
+      }
+      
+      const winner = await contract.getCurrentWinner();
+      setCurrentWinner({
+        winnerID: safeToNumber(winner.winnerID),
+        winnerName: winner.winnerName,
+        winnerParty: winner.winnerParty,
+        maxVotes: safeToNumber(winner.maxVotes)
+      });
+    } catch (error) {
+      console.error('Error loading current winner:', error);
+      setCurrentWinner(null);
+    }
+  };
+
+  // Contract functions
+  const registerVoter = async () => {
+    if (!contract) throw new Error('Contract not available');
+    
+    try {
+      const tx = await contract.selfRegister();
       await tx.wait();
       await loadVoterInfo(); // Reload voter info
       return tx;
@@ -167,12 +277,12 @@ export const useElectionData = () => {
   };
 
   const castVote = async (candidateId) => {
-    if (!contractHook) throw new Error('Contract not available');
+    if (!contract) throw new Error('Contract not available');
     
     try {
-      const tx = await contractHook.vote(candidateId);
+      const tx = await contract.vote(candidateId);
       await tx.wait();
-      await Promise.all([loadVoterInfo(), loadCandidates()]); // Reload relevant data
+      await Promise.all([loadVoterInfo(), loadCandidates(), loadCurrentWinner()]); // Reload relevant data
       return tx;
     } catch (error) {
       throw new Error(`Voting failed: ${error.message}`);
@@ -180,10 +290,10 @@ export const useElectionData = () => {
   };
 
   const addCandidate = async (name, party) => {
-    if (!contractHook) throw new Error('Contract not available');
+    if (!contract) throw new Error('Contract not available');
     
     try {
-      const tx = await contractHook.addCandidate(name, party);
+      const tx = await contract.addCandidate(name, party);
       await tx.wait();
       await loadCandidates(); // Reload candidates
       return tx;
@@ -193,12 +303,12 @@ export const useElectionData = () => {
   };
 
   const startElection = async () => {
-    if (!contractHook) throw new Error('Contract not available');
+    if (!contract) throw new Error('Contract not available');
     
     try {
-      const tx = await contractHook.startElection();
+      const tx = await contract.startVoting();
       await tx.wait();
-      await Promise.all([loadElectionInfo(), loadElectionStatus()]); // Reload election data
+      await Promise.all([loadElectionInfo(), loadElectionStatus(), loadSystemInfo()]); // Reload election data
       return tx;
     } catch (error) {
       throw new Error(`Starting election failed: ${error.message}`);
@@ -206,12 +316,12 @@ export const useElectionData = () => {
   };
 
   const endElection = async () => {
-    if (!contractHook) throw new Error('Contract not available');
+    if (!contract) throw new Error('Contract not available');
     
     try {
-      const tx = await contractHook.endElection();
+      const tx = await contract.endVoting();
       await tx.wait();
-      await Promise.all([loadElectionInfo(), loadElectionStatus()]); // Reload election data
+      await Promise.all([loadElectionInfo(), loadElectionStatus(), loadSystemInfo()]); // Reload election data
       return tx;
     } catch (error) {
       throw new Error(`Ending election failed: ${error.message}`);
@@ -219,12 +329,12 @@ export const useElectionData = () => {
   };
 
   const finalizeElection = async () => {
-    if (!contractHook) throw new Error('Contract not available');
+    if (!contract) throw new Error('Contract not available');
     
     try {
-      const tx = await contractHook.finalizeElection();
+      const tx = await contract.finalizeElection();
       await tx.wait();
-      await loadElectionInfo(); // Reload election info
+      await Promise.all([loadElectionInfo(), loadCurrentWinner()]); // Reload election info
       return tx;
     } catch (error) {
       throw new Error(`Finalizing election failed: ${error.message}`);
@@ -233,35 +343,41 @@ export const useElectionData = () => {
 
   // Load data when contract or account changes
   useEffect(() => {
-    loadData();
-  }, [contractHook, account, isConnected]);
+    if (contract && contract.isContractReady && userAccount) {
+      loadData();
+    }
+  }, [contract, contract?.isContractReady, userAccount]);
 
   // Auto-refresh data every 30 seconds
   useEffect(() => {
-    if (!contractHook || !isConnected) return;
+    if (!contract || !contract.isContractReady || !userAccount) return;
 
     const interval = setInterval(() => {
       loadData();
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [contractHook, isConnected]);
+  }, [contract, contract?.isContractReady, userAccount]);
 
   // Helper functions for backward compatibility
   const isUserAdmin = () => {
+    if (!userRole) return false;
     return userRole?.isAdmin || false;
   };
 
   const isUserObserver = () => {
+    if (!userRole) return false;
     return userRole?.isObserver || false;
   };
 
   const isUserCommissioner = () => {
-    return userRole?.isAdmin || false; // Assuming commissioner is same as admin
+    if (!userRole) return false;
+    return userRole?.isCommissioner || false;
   };
 
   const isUserOwner = () => {
-    return userRole?.isAdmin || false; // Assuming owner is same as admin
+    if (!userRole) return false;
+    return userRole?.isOwner || false;
   };
 
   const isUserRegistered = () => {
@@ -273,15 +389,17 @@ export const useElectionData = () => {
   };
 
   const canUserVote = () => {
-    return isUserRegistered() && !hasUserVoted() && electionInfo?.isActive;
+    return isUserRegistered() && !hasUserVoted() && electionStatus?.votingActive;
   };
 
   const getElectionPhase = () => {
-    if (!electionStatus) return 'Unknown';
+    if (!electionStatus || !electionInfo) return 'Unknown';
     
-    const phase = electionStatus.currentPhase;
-    const phases = ['Setup', 'Registration', 'Voting', 'Ended', 'Finalized'];
-    return phases[phase] || 'Unknown';
+    if (electionInfo.isFinalized) return 'Finalized';
+    if (electionStatus.votingActive) return 'Voting';
+    if (electionStatus.registrationActive) return 'Registration';
+    if (electionInfo.isActive) return 'Setup';
+    return 'Inactive';
   };
 
   return {
@@ -291,15 +409,17 @@ export const useElectionData = () => {
     candidates,
     voterInfo,
     userRole,
+    systemInfo,
+    currentWinner,
     
     // Loading and error states
     loading,
     error,
     
     // Contract connection
-    account,
-    isConnected,
-    connectWallet,
+    account: userAccount,
+    isConnected: !!contract && !!userAccount,
+    connectWallet: null, // Not available in this version
     
     // Actions
     registerVoter,
@@ -320,6 +440,7 @@ export const useElectionData = () => {
     getElectionPhase,
     
     // Utility
-    refreshData: loadData
+    refreshData: loadData,
+    clearError: () => setError(null)
   };
 };

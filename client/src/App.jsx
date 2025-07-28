@@ -144,7 +144,7 @@ function App() {
       
       // Refresh election data
       setTimeout(() => {
-        electionData.loadElectionData();
+        electionData.refreshData();
       }, 2000);
       
     } catch (error) {
@@ -172,7 +172,7 @@ function App() {
       // Clear selection and refresh data
       setSelectedCandidate(null);
       setTimeout(() => {
-        electionData.loadElectionData();
+        electionData.refreshData();
       }, 2000);
       
     } catch (error) {
@@ -190,7 +190,7 @@ function App() {
 
   // Handle data refresh
   const handleRefreshData = useCallback(() => {
-    electionData.loadElectionData();
+    electionData.refreshData();
   }, [electionData]);
 
   // Clear error messages
@@ -204,11 +204,13 @@ function App() {
     setError('');
     setSuccess('');
     wallet.clearError();
-    electionData.clearError();
+    if (electionData.clearError) {
+      electionData.clearError();
+    }
   }, [wallet, electionData]);
 
   // Show loading spinner during initial load
-  if (electionData.loading && !electionData.hasElection) {
+  if (electionData.loading && !electionData.electionInfo) {
     return (
       <div style={containerStyle}>
         <Header
