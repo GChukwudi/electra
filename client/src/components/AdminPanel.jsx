@@ -29,6 +29,19 @@ const AdminPanel = ({
     return null;
   }
 
+  // Don't render if systemInfo is not loaded yet
+  if (!systemInfo) {
+    return (
+      <div style={{ 
+        textAlign: 'center', 
+        padding: '40px',
+        color: COLORS.textLight 
+      }}>
+        Loading admin panel...
+      </div>
+    );
+  }
+
   // Helper functions
   const setActionLoading = (action, isLoading) => {
     setLoadingStates(prev => ({
@@ -294,7 +307,7 @@ const AdminPanel = ({
     </div>
   );
 
-  // System Status Card (always show)
+  // System Status Card (always show) - Fixed the null access issue
   adminCards.push(
     <div key="system-status" style={cardStyle}>
       <h3 style={titleStyle}>
@@ -307,14 +320,20 @@ const AdminPanel = ({
       <div style={infoRowStyle}>
         <span style={labelStyle}>Contract Owner</span>
         <span style={valueStyle}>
-          {systemInfo.owner?.slice(0, 6)}...{systemInfo.owner?.slice(-4)}
+          {systemInfo.owner ? 
+            `${systemInfo.owner.slice(0, 6)}...${systemInfo.owner.slice(-4)}` : 
+            'Loading...'
+          }
         </span>
       </div>
       
       <div style={infoRowStyle}>
         <span style={labelStyle}>Commissioner</span>
         <span style={valueStyle}>
-          {systemInfo.commissioner?.slice(0, 6)}...{systemInfo.commissioner?.slice(-4)}
+          {systemInfo.commissioner ? 
+            `${systemInfo.commissioner.slice(0, 6)}...${systemInfo.commissioner.slice(-4)}` : 
+            'Loading...'
+          }
         </span>
       </div>
       
