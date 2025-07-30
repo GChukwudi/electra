@@ -10,11 +10,9 @@ const AdminPanel = ({
   contractHook,
   onRefreshData 
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-
+  // Individual loading states for each action type
+  const [loadingStates, setLoadingStates] = useState({});
+  
   // Form states
   const [candidateForm, setCandidateForm] = useState({ name: '', party: '' });
   const [electionForm, setElectionForm] = useState({
@@ -26,38 +24,149 @@ const AdminPanel = ({
   const [voterAddress, setVoterAddress] = useState('');
   const [roleForm, setRoleForm] = useState({ address: '', role: USER_ROLES.VOTER });
 
-  const cardStyle = {
-    background: COLORS.background,
-    border: `2px solid ${COLORS.primary}`,
-    borderRadius: '12px',
-    padding: '24px',
-    marginBottom: '20px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+  // Don't render if user doesn't have admin privileges
+  if (!isUserAdmin) {
+    return null;
+  }
+
+  // Helper functions
+  const setActionLoading = (action, isLoading) => {
+    setLoadingStates(prev => ({
+      ...prev,
+      [action]: isLoading
+    }));
   };
 
-  const headerStyle = {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    cursor: 'pointer',
-    marginBottom: isExpanded ? '20px' : '0'
+  const isActionLoading = (action) => {
+    return loadingStates[action] || false;
+  };
+
+  const handleAction = async (action, params = {}) => {
+    try {
+      setActionLoading(action, true);
+
+      let result;
+      switch (action) {
+        case 'addCandidate':
+          result = await contractHook.addCandidate(params.name, params.party);
+          setCandidateForm({ name: '', party: '' });
+          break;
+
+        case 'createElection':
+          result = await contractHook.createElection(
+            params.title,
+            params.registrationDeadline,
+            params.startTime,
+            params.endTime
+          );
+          setElectionForm({ title: '', registrationDeadline: '', startTime: '', endTime: '' });
+          break;
+
+        case 'registerVoter':
+          result = await contractHook.registerVoter(params.address);
+          setVoterAddress('');
+          break;
+
+        case 'startVoting':
+          result = await contractHook.startVoting();
+          break;
+
+        case 'endVoting':
+          result = await contractHook.endVoting();
+          break;
+
+        case 'finalizeElection':
+          result = await contractHook.finalizeElection();
+          break;
+
+        case 'pauseSystem':
+          result = await contractHook.pauseSystem();
+          break;
+
+        case 'assignRole':
+          result = await contractHook.assignRole(params.address, params.role);
+          setRoleForm({ address: '', role: USER_ROLES.VOTER });
+          break;
+
+        default:
+          throw new Error('Unknown action');
+      }
+
+      if (result && result.wait) {
+        await result.wait();
+      }
+
+      if (onRefreshData) {
+        setTimeout(onRefreshData, 2000);
+      }
+
+    } catch (error) {
+      console.error(`Error executing ${action}:`, error);
+      throw error; // Let parent handle the error display
+    } finally {
+      setActionLoading(action, false);
+    }
+  };
+
+  // Grid layout style matching your app's pattern
+  const gridStyle = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '20px',
+    marginBottom: '30px'
+  };
+
+  // Shared card style following the app pattern
+  const cardStyle = {
+    background: COLORS.backgroundLight,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: '12px',
+    padding: '24px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    height: 'fit-content'
   };
 
   const titleStyle = {
-    fontSize: '1.5rem',
-    fontWeight: 'bold',
-    color: COLORS.primary,
-    margin: 0
+    fontSize: '1.125rem',
+    fontWeight: '600',
+    color: COLORS.text,
+    margin: '0 0 8px 0',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  };
+
+  const subtitleStyle = {
+    fontSize: '0.875rem',
+    color: COLORS.textLight,
+    marginBottom: '16px',
+    lineHeight: '1.4'
+  };
+
+  const inputStyle = {
+    width: '100%',
+    padding: '12px',
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: '6px',
+    fontSize: '1rem',
+    marginBottom: '12px',
+    boxSizing: 'border-box',
+    fontFamily: 'inherit'
   };
 
   const buttonStyle = {
-    padding: '8px 16px',
+    padding: '12px 24px',
     border: 'none',
     borderRadius: '6px',
     fontSize: '0.875rem',
     fontWeight: '600',
     cursor: 'pointer',
-    transition: 'all 0.2s ease'
+    transition: 'all 0.2s ease',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    marginRight: '8px',
+    marginBottom: '8px'
   };
 
   const primaryButtonStyle = {
@@ -78,260 +187,297 @@ const AdminPanel = ({
     color: 'white'
   };
 
-  const inputStyle = {
-    width: '100%',
-    padding: '10px 12px',
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: '6px',
-    fontSize: '1rem',
-    marginBottom: '12px'
+  const successButtonStyle = {
+    ...buttonStyle,
+    backgroundColor: COLORS.success || COLORS.primary,
+    color: 'white'
   };
 
-  const sectionStyle = {
-    marginBottom: '24px',
-    padding: '16px',
-    backgroundColor: COLORS.backgroundLight,
-    borderRadius: '8px',
-    border: `1px solid ${COLORS.border}`
+  const infoRowStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '8px 0',
+    borderBottom: `1px solid ${COLORS.border}`
   };
 
-  const sectionTitleStyle = {
-    fontSize: '1.125rem',
+  const infoRowLastStyle = {
+    ...infoRowStyle,
+    borderBottom: 'none'
+  };
+
+  const labelStyle = {
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    color: COLORS.text
+  };
+
+  const valueStyle = {
+    fontSize: '0.875rem',
+    color: COLORS.textLight,
+    fontFamily: 'monospace'
+  };
+
+  const statusValueStyle = {
+    fontSize: '0.875rem',
     fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: '12px'
+    fontFamily: 'inherit'
   };
 
-  // Don't render if user doesn't have admin privileges
-  if (!isUserAdmin) {
-    return null;
-  }
+  // Build cards array for admin functions
+  const adminCards = [];
 
-  const handleAction = async (action, params = {}) => {
-    try {
-      setLoading(true);
-      setError('');
-      setSuccess('');
-
-      let result;
-      switch (action) {
-        case 'addCandidate':
-          result = await contractHook.addCandidate(params.name, params.party);
-          setSuccess(`Candidate "${params.name}" added successfully!`);
-          setCandidateForm({ name: '', party: '' });
-          break;
-
-        case 'createElection':
-          result = await contractHook.createElection(
-            params.title,
-            params.registrationDeadline,
-            params.startTime,
-            params.endTime
-          );
-          setSuccess('Election created successfully!');
-          setElectionForm({ title: '', registrationDeadline: '', startTime: '', endTime: '' });
-          break;
-
-        case 'registerVoter':
-          result = await contractHook.registerVoter(params.address);
-          setSuccess(`Voter ${params.address} registered successfully!`);
-          setVoterAddress('');
-          break;
-
-        case 'startVoting':
-          result = await contractHook.startVoting();
-          setSuccess('Voting started successfully!');
-          break;
-
-        case 'endVoting':
-          result = await contractHook.endVoting();
-          setSuccess('Voting ended successfully!');
-          break;
-
-        case 'finalizeElection':
-          result = await contractHook.finalizeElection();
-          setSuccess('Election finalized successfully!');
-          break;
-
-        case 'pauseSystem':
-          result = await contractHook.pauseSystem();
-          setSuccess('System pause status toggled!');
-          break;
-
-        case 'assignRole':
-          result = await contractHook.assignRole(params.address, params.role);
-          setSuccess(`Role assigned to ${params.address} successfully!`);
-          setRoleForm({ address: '', role: USER_ROLES.VOTER });
-          break;
-
-        default:
-          throw new Error('Unknown action');
-      }
-
-      // Wait for transaction
-      if (result && result.wait) {
-        await result.wait();
-      }
-
-      // Refresh data
-      if (onRefreshData) {
-        setTimeout(onRefreshData, 2000);
-      }
-
-    } catch (error) {
-      console.error(`Error executing ${action}:`, error);
-      setError(error.message || `Failed to execute ${action}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const clearMessages = () => {
-    setError('');
-    setSuccess('');
-  };
-
-  const renderCandidateSection = () => (
-    <div style={sectionStyle}>
-      <h4 style={sectionTitleStyle}>Add Candidate</h4>
+  // Add Candidate Card
+  adminCards.push(
+    <div key="add-candidate" style={cardStyle}>
+      <h3 style={titleStyle}>
+        👤 Add Candidate
+      </h3>
+      <p style={subtitleStyle}>
+        Add a new candidate to the current election
+      </p>
       <input
         style={inputStyle}
         type="text"
-        placeholder="Candidate Name"
+        placeholder="Enter candidate's full name"
         value={candidateForm.name}
         onChange={(e) => setCandidateForm(prev => ({ ...prev, name: e.target.value }))}
       />
       <input
         style={inputStyle}
         type="text"
-        placeholder="Party Name"
+        placeholder="Enter party name or affiliation"
         value={candidateForm.party}
         onChange={(e) => setCandidateForm(prev => ({ ...prev, party: e.target.value }))}
       />
       <button
-        style={primaryButtonStyle}
+        style={{
+          ...primaryButtonStyle,
+          opacity: (isActionLoading('addCandidate') || !candidateForm.name || !candidateForm.party) ? 0.6 : 1,
+          marginRight: '0'
+        }}
         onClick={() => handleAction('addCandidate', candidateForm)}
-        disabled={loading || !candidateForm.name || !candidateForm.party}
+        disabled={isActionLoading('addCandidate') || !candidateForm.name || !candidateForm.party}
       >
-        {loading ? 'Adding...' : 'Add Candidate'}
+        {isActionLoading('addCandidate') ? 'Adding...' : 'Add Candidate'}
       </button>
     </div>
   );
 
-  const renderElectionSection = () => {
-    if (!isUserCommissioner) return null;
-
-    return (
-      <div style={sectionStyle}>
-        <h4 style={sectionTitleStyle}>Election Management</h4>
-        
-        {!electionInfo?.isActive && (
-          <>
-            <input
-              style={inputStyle}
-              type="text"
-              placeholder="Election Title"
-              value={electionForm.title}
-              onChange={(e) => setElectionForm(prev => ({ ...prev, title: e.target.value }))}
-            />
-            <input
-              style={inputStyle}
-              type="datetime-local"
-              placeholder="Registration Deadline"
-              value={electionForm.registrationDeadline}
-              onChange={(e) => setElectionForm(prev => ({ ...prev, registrationDeadline: e.target.value }))}
-            />
-            <input
-              style={inputStyle}
-              type="datetime-local"
-              placeholder="Voting Start Time"
-              value={electionForm.startTime}
-              onChange={(e) => setElectionForm(prev => ({ ...prev, startTime: e.target.value }))}
-            />
-            <input
-              style={inputStyle}
-              type="datetime-local"
-              placeholder="Voting End Time"
-              value={electionForm.endTime}
-              onChange={(e) => setElectionForm(prev => ({ ...prev, endTime: e.target.value }))}
-            />
-            <button
-              style={primaryButtonStyle}
-              onClick={() => {
-                const params = {
-                  title: electionForm.title,
-                  registrationDeadline: Math.floor(new Date(electionForm.registrationDeadline).getTime() / 1000),
-                  startTime: Math.floor(new Date(electionForm.startTime).getTime() / 1000),
-                  endTime: Math.floor(new Date(electionForm.endTime).getTime() / 1000)
-                };
-                handleAction('createElection', params);
-              }}
-              disabled={loading || !electionForm.title || !electionForm.registrationDeadline || !electionForm.startTime || !electionForm.endTime}
-            >
-              {loading ? 'Creating...' : 'Create Election'}
-            </button>
-          </>
-        )}
-
-        {electionInfo?.isActive && (
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <button
-              style={secondaryButtonStyle}
-              onClick={() => handleAction('startVoting')}
-              disabled={loading}
-            >
-              Start Voting
-            </button>
-            <button
-              style={dangerButtonStyle}
-              onClick={() => handleAction('endVoting')}
-              disabled={loading}
-            >
-              End Voting
-            </button>
-            <button
-              style={primaryButtonStyle}
-              onClick={() => handleAction('finalizeElection')}
-              disabled={loading}
-            >
-              Finalize Election
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderVoterSection = () => (
-    <div style={sectionStyle}>
-      <h4 style={sectionTitleStyle}>Register Voter</h4>
+  // Register Voter Card
+  adminCards.push(
+    <div key="register-voter" style={cardStyle}>
+      <h3 style={titleStyle}>
+        🗳️ Register Voter
+      </h3>
+      <p style={subtitleStyle}>
+        Register a new voter by their wallet address
+      </p>
       <input
         style={inputStyle}
         type="text"
-        placeholder="Voter Address (0x...)"
+        placeholder="0x1234567890abcdef..."
         value={voterAddress}
         onChange={(e) => setVoterAddress(e.target.value)}
       />
       <button
-        style={secondaryButtonStyle}
+        style={{
+          ...secondaryButtonStyle,
+          opacity: (isActionLoading('registerVoter') || !voterAddress) ? 0.6 : 1,
+          marginRight: '0'
+        }}
         onClick={() => handleAction('registerVoter', { address: voterAddress })}
-        disabled={loading || !voterAddress}
+        disabled={isActionLoading('registerVoter') || !voterAddress}
       >
-        {loading ? 'Registering...' : 'Register Voter'}
+        {isActionLoading('registerVoter') ? 'Registering...' : 'Register Voter'}
       </button>
     </div>
   );
 
-  const renderRoleSection = () => {
-    if (!isUserCommissioner) return null;
+  // System Status Card (always show)
+  adminCards.push(
+    <div key="system-status" style={cardStyle}>
+      <h3 style={titleStyle}>
+        📊 System Status
+      </h3>
+      <p style={subtitleStyle}>
+        Current system information and contract details
+      </p>
+      
+      <div style={infoRowStyle}>
+        <span style={labelStyle}>Contract Owner</span>
+        <span style={valueStyle}>
+          {systemInfo.owner?.slice(0, 6)}...{systemInfo.owner?.slice(-4)}
+        </span>
+      </div>
+      
+      <div style={infoRowStyle}>
+        <span style={labelStyle}>Commissioner</span>
+        <span style={valueStyle}>
+          {systemInfo.commissioner?.slice(0, 6)}...{systemInfo.commissioner?.slice(-4)}
+        </span>
+      </div>
+      
+      <div style={infoRowStyle}>
+        <span style={labelStyle}>System Status</span>
+        <span style={{
+          ...statusValueStyle,
+          color: systemInfo.paused ? COLORS.danger : COLORS.success || COLORS.primary
+        }}>
+          {systemInfo.paused ? 'PAUSED' : 'ACTIVE'}
+        </span>
+      </div>
+      
+      <div style={infoRowStyle}>
+        <span style={labelStyle}>Registration</span>
+        <span style={{
+          ...statusValueStyle,
+          color: systemInfo.registrationOpen ? COLORS.success || COLORS.primary : COLORS.textLight
+        }}>
+          {systemInfo.registrationOpen ? 'OPEN' : 'CLOSED'}
+        </span>
+      </div>
+      
+      <div style={infoRowLastStyle}>
+        <span style={labelStyle}>Voting</span>
+        <span style={{
+          ...statusValueStyle,
+          color: systemInfo.votingOpen ? COLORS.success || COLORS.primary : COLORS.textLight
+        }}>
+          {systemInfo.votingOpen ? 'OPEN' : 'CLOSED'}
+        </span>
+      </div>
+    </div>
+  );
 
-    return (
-      <div style={sectionStyle}>
-        <h4 style={sectionTitleStyle}>Role Management</h4>
+  // Commissioner-only cards
+  if (isUserCommissioner) {
+    // Election Creation Card (only when no active election)
+    if (!electionInfo?.isActive) {
+      adminCards.push(
+        <div key="create-election" style={cardStyle}>
+          <h3 style={titleStyle}>
+            🏛️ Create Election
+          </h3>
+          <p style={subtitleStyle}>
+            Set up a new election with voting schedule (Commissioner Only)
+          </p>
+          <input
+            style={inputStyle}
+            type="text"
+            placeholder="Election title"
+            value={electionForm.title}
+            onChange={(e) => setElectionForm(prev => ({ ...prev, title: e.target.value }))}
+          />
+          <input
+            style={inputStyle}
+            type="datetime-local"
+            title="Registration Deadline"
+            value={electionForm.registrationDeadline}
+            onChange={(e) => setElectionForm(prev => ({ ...prev, registrationDeadline: e.target.value }))}
+          />
+          <input
+            style={inputStyle}
+            type="datetime-local"
+            title="Voting Start Time"
+            value={electionForm.startTime}
+            onChange={(e) => setElectionForm(prev => ({ ...prev, startTime: e.target.value }))}
+          />
+          <input
+            style={inputStyle}
+            type="datetime-local"
+            title="Voting End Time"
+            value={electionForm.endTime}
+            onChange={(e) => setElectionForm(prev => ({ ...prev, endTime: e.target.value }))}
+          />
+          <button
+            style={{
+              ...primaryButtonStyle,
+              opacity: (isActionLoading('createElection') || !electionForm.title || !electionForm.registrationDeadline || !electionForm.startTime || !electionForm.endTime) ? 0.6 : 1,
+              marginRight: '0'
+            }}
+            onClick={() => {
+              const params = {
+                title: electionForm.title,
+                registrationDeadline: Math.floor(new Date(electionForm.registrationDeadline).getTime() / 1000),
+                startTime: Math.floor(new Date(electionForm.startTime).getTime() / 1000),
+                endTime: Math.floor(new Date(electionForm.endTime).getTime() / 1000)
+              };
+              handleAction('createElection', params);
+            }}
+            disabled={isActionLoading('createElection') || !electionForm.title || !electionForm.registrationDeadline || !electionForm.startTime || !electionForm.endTime}
+          >
+            {isActionLoading('createElection') ? 'Creating...' : 'Create Election'}
+          </button>
+        </div>
+      );
+    }
+
+    // Election Control Card (only when election is active)
+    if (electionInfo?.isActive) {
+      adminCards.push(
+        <div key="election-controls" style={cardStyle}>
+          <h3 style={titleStyle}>
+            ⚡ Election Controls
+          </h3>
+          <p style={subtitleStyle}>
+            Control the current election state (Commissioner Only)
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <button
+              style={{
+                ...successButtonStyle,
+                opacity: isActionLoading('startVoting') ? 0.6 : 1,
+                marginRight: '0',
+                marginBottom: '0'
+              }}
+              onClick={() => handleAction('startVoting')}
+              disabled={isActionLoading('startVoting')}
+            >
+              {isActionLoading('startVoting') ? 'Starting...' : 'Start Voting'}
+            </button>
+            <button
+              style={{
+                ...dangerButtonStyle,
+                opacity: isActionLoading('endVoting') ? 0.6 : 1,
+                marginRight: '0',
+                marginBottom: '0'
+              }}
+              onClick={() => handleAction('endVoting')}
+              disabled={isActionLoading('endVoting')}
+            >
+              {isActionLoading('endVoting') ? 'Ending...' : 'End Voting'}
+            </button>
+            <button
+              style={{
+                ...primaryButtonStyle,
+                opacity: isActionLoading('finalizeElection') ? 0.6 : 1,
+                marginRight: '0',
+                marginBottom: '0'
+              }}
+              onClick={() => handleAction('finalizeElection')}
+              disabled={isActionLoading('finalizeElection')}
+            >
+              {isActionLoading('finalizeElection') ? 'Finalizing...' : 'Finalize Election'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Role Management Card
+    adminCards.push(
+      <div key="role-management" style={cardStyle}>
+        <h3 style={titleStyle}>
+          🔐 Assign User Role
+        </h3>
+        <p style={subtitleStyle}>
+          Assign or change user roles and permissions (Commissioner Only)
+        </p>
         <input
           style={inputStyle}
           type="text"
-          placeholder="User Address (0x...)"
+          placeholder="0x1234567890abcdef..."
           value={roleForm.address}
           onChange={(e) => setRoleForm(prev => ({ ...prev, address: e.target.value }))}
         />
@@ -346,109 +492,51 @@ const AdminPanel = ({
           {isUserOwner && <option value={USER_ROLES.COMMISSIONER}>Commissioner</option>}
         </select>
         <button
-          style={primaryButtonStyle}
+          style={{
+            ...primaryButtonStyle,
+            opacity: (isActionLoading('assignRole') || !roleForm.address) ? 0.6 : 1,
+            marginRight: '0'
+          }}
           onClick={() => handleAction('assignRole', roleForm)}
-          disabled={loading || !roleForm.address}
+          disabled={isActionLoading('assignRole') || !roleForm.address}
         >
-          {loading ? 'Assigning...' : 'Assign Role'}
+          {isActionLoading('assignRole') ? 'Assigning...' : 'Assign Role'}
         </button>
       </div>
     );
-  };
 
-  const renderSystemSection = () => {
-    if (!isUserCommissioner) return null;
-
-    return (
-      <div style={sectionStyle}>
-        <h4 style={sectionTitleStyle}>System Controls</h4>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <button
-            style={systemInfo.paused ? secondaryButtonStyle : dangerButtonStyle}
-            onClick={() => handleAction('pauseSystem')}
-            disabled={loading}
-          >
-            {systemInfo.paused ? 'Unpause System' : 'Pause System'}
-          </button>
-        </div>
+    // System Control Card
+    adminCards.push(
+      <div key="system-control" style={cardStyle}>
+        <h3 style={titleStyle}>
+          🛡️ System Control
+        </h3>
+        <p style={subtitleStyle}>
+          {systemInfo.paused 
+            ? 'System is currently paused. Click to resume normal operations (Commissioner Only)' 
+            : 'Emergency pause to halt all system operations if needed (Commissioner Only)'}
+        </p>
+        <button
+          style={{
+            ...(systemInfo.paused ? successButtonStyle : dangerButtonStyle),
+            opacity: isActionLoading('pauseSystem') ? 0.6 : 1,
+            marginRight: '0'
+          }}
+          onClick={() => handleAction('pauseSystem')}
+          disabled={isActionLoading('pauseSystem')}
+        >
+          {isActionLoading('pauseSystem') 
+            ? (systemInfo.paused ? 'Resuming...' : 'Pausing...') 
+            : (systemInfo.paused ? 'Resume System' : 'Pause System')
+          }
+        </button>
       </div>
     );
-  };
+  }
 
   return (
-    <div style={cardStyle}>
-      <div style={headerStyle} onClick={() => setIsExpanded(!isExpanded)}>
-        <h3 style={titleStyle}>
-          🔧 Admin Panel
-          {isUserCommissioner && ' (Commissioner)'}
-          {isUserOwner && ' (Owner)'}
-        </h3>
-        <button style={buttonStyle}>
-          {isExpanded ? '▲ Collapse' : '▼ Expand'}
-        </button>
-      </div>
-
-      {isExpanded && (
-        <div>
-          {/* Messages */}
-          {error && (
-            <div style={{
-              padding: '12px',
-              backgroundColor: '#fef2f2',
-              border: '1px solid #fecaca',
-              borderRadius: '6px',
-              color: '#991b1b',
-              marginBottom: '16px'
-            }}>
-              {error}
-              <button
-                style={{ float: 'right', background: 'none', border: 'none', color: '#991b1b', cursor: 'pointer' }}
-                onClick={clearMessages}
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {success && (
-            <div style={{
-              padding: '12px',
-              backgroundColor: '#f0fdf4',
-              border: '1px solid #bbf7d0',
-              borderRadius: '6px',
-              color: '#166534',
-              marginBottom: '16px'
-            }}>
-              {success}
-              <button
-                style={{ float: 'right', background: 'none', border: 'none', color: '#166534', cursor: 'pointer' }}
-                onClick={clearMessages}
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {/* Admin Sections */}
-          {renderCandidateSection()}
-          {renderVoterSection()}
-          {renderElectionSection()}
-          {renderRoleSection()}
-          {renderSystemSection()}
-
-          {/* System Info */}
-          <div style={sectionStyle}>
-            <h4 style={sectionTitleStyle}>System Information</h4>
-            <div style={{ fontSize: '0.875rem', color: COLORS.textLight }}>
-              <div>Owner: {systemInfo.owner}</div>
-              <div>Commissioner: {systemInfo.commissioner}</div>
-              <div>System Paused: {systemInfo.paused ? 'Yes' : 'No'}</div>
-              <div>Registration Open: {systemInfo.registrationOpen ? 'Yes' : 'No'}</div>
-              <div>Voting Open: {systemInfo.votingOpen ? 'Yes' : 'No'}</div>
-            </div>
-          </div>
-        </div>
-      )}
+    <div style={gridStyle}>
+      {adminCards}
     </div>
   );
 };
