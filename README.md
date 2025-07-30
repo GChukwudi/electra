@@ -23,7 +23,7 @@ Electra is a secure blockchain voting system built on Ethereum. Features cryptog
 
 1. **Clone and setup**
    ```bash
-   git clone https://github.com/yourusername/electra.git
+   git clone https://github.com/GChukwudi/electra
    cd electra
    npm install
    cd client && npm install && cd ..
@@ -38,7 +38,7 @@ Electra is a secure blockchain voting system built on Ethereum. Features cryptog
 3. **Deploy contracts locally**
    ```bash
    # Start Ganache or local blockchain
-   npx ganache-cli
+   ganache
 
    # Compile and deploy
    npx truffle compile
@@ -48,10 +48,10 @@ Electra is a secure blockchain voting system built on Ethereum. Features cryptog
 4. **Start development server**
    ```bash
    cd client
-   npm start
+   npm run dev
    ```
 
-   Access at http://localhost:3000
+   Access at http://localhost:5173
 
 ## 📖 How to Use
 
