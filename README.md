@@ -1,6 +1,6 @@
 # Electra - Blockchain Voting System
 
-**[Live App](YOUR_DEPLOYED_URL_HERE)**
+**[Live App](https://electra-tw0n.onrender.com/)**
 
 Electra is a secure blockchain voting system built on Ethereum. Features cryptographically secured votes, real-time results, and complete transparency through immutable blockchain records.
 
