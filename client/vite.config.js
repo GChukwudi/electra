@@ -1,6 +1,5 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { util } from 'chai'
 
 // https://vite.dev/config/
 export default defineConfig({
